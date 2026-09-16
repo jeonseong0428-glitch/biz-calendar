@@ -105,13 +105,13 @@
     for (var d=start; d<=end; d=addDays(d,1)){
       var inM = parse(d).getMonth()===m, wd = dowIdx(d)>=5;
       var list = (map[d]||[]).slice().sort(sortMonth);
-      var max = window.innerWidth<640 ? 3 : 4;
+      var max = window.innerWidth<640 ? 5 : 8;
       h += '<div class="cell'+(inM?'':' out')+(wd?' weekend':'')+(d===t?' today':'')+'" data-day="'+d+'" role="button" tabindex="0" aria-label="'+md(d)+' 일정 '+list.length+'건">'+
         '<div class="dn"><b>'+(+d.slice(8))+'</b></div>'+
         list.slice(0,max).map(function(e){
           var k = stageOf(e);
           return '<span class="ev'+(e.status==="done"?' done':'')+(isLate(e)?' late':'')+(e.urgent&&e.status!=="done"?' urgent':'')+'"'+stageStyle(k)+' title="'+esc(STAGE[k].n+" · "+e.company+" · "+e.title)+'">'+
-            '<b class="sb">'+(k==="0"?"·":k)+'</b><span class="co">'+esc(e.company)+'</span><span class="ti">'+esc(e.title)+'</span></span>';
+            '<span class="eh"><b class="sb">'+(k==="0"?"·":k)+'</b><span class="co">'+esc(e.company)+'</span></span><span class="ti">'+esc(e.title)+'</span></span>';
         }).join("")+
         (list.length>max?'<span class="more">+'+(list.length-max)+'건</span>':'')+'</div>';
     }
