@@ -1,7 +1,7 @@
 // 사업팀 달력 — 구글 시트 저장 서버 (Apps Script 웹 앱)
 // 배포: 배포 → 새 배포 → 유형 "웹 앱" → 실행 사용자 "나" → 액세스 권한 "모든 사용자"
 const SEED_URL = 'https://jeonseong0428-glitch.github.io/biz-calendar/data/events.json';
-const COLS = ['id', 'title', 'company', 'date', 'start', 'status', 'urgent', 'note', 'source', 'notionId', 'updatedAt'];
+const COLS = ['id', 'title', 'company', 'date', 'start', 'status', 'urgent', 'note', 'source', 'notionId', 'updatedAt', 'stage'];
 
 function ss_() {
   const props = PropertiesService.getScriptProperties();
@@ -25,6 +25,8 @@ function sheet_() {
   if (sh.getLastRow() === 0) {
     sh.getRange(1, 1, 1, COLS.length).setValues([COLS]).setFontWeight('bold');
     sh.setFrozenRows(1);
+  } else if (sh.getRange(1, COLS.length).getValue() !== COLS[COLS.length - 1]) {
+    sh.getRange(1, 1, 1, COLS.length).setValues([COLS]).setFontWeight('bold');
   }
   return sh;
 }
