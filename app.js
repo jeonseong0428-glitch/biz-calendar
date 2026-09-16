@@ -1,0 +1,455 @@
+(function(){
+  "use strict";
+  var $ = function(id){ return document.getElementById(id); };
+  var DOW = ["월","화","수","목","금","토","일"];
+  var STL = {todo:"예정", doing:"진행 중", done:"완료"};
+  var NEXT = {todo:"doing", doing:"done", done:"todo"};
+
+  // ---- 상태
+  var S = { view:"month", cursor: ymd(new Date()), company:"", hideDone:false, events:[], ready:false, store:null, editing:null };
+  try {
+    var saved = JSON.parse(localStorage.getItem("bizcal.prefs")||"null");
+    if (saved){ if (/^(month|week|day)$/.test(saved.view)) S.view = saved.view; S.company = saved.company||""; S.hideDone = !!saved.hideDone; }
+  } catch(e){}
+  function savePrefs(){ try{ localStorage.setItem("bizcal.prefs", JSON.stringify({view:S.view, company:S.company, hideDone:S.hideDone})); }catch(e){} }
+
+  // ---- 날짜 도구
+  function pad(n){ return (n<10?"0":"")+n; }
+  function ymd(d){ return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()); }
+  function parse(s){ var p=s.split("-"); return new Date(+p[0], +p[1]-1, +p[2]); }
+  function addDays(s,n){ var d=parse(s); d.setDate(d.getDate()+n); return ymd(d); }
+  function mondayOf(s){ var d=parse(s); var w=(d.getDay()+6)%7; d.setDate(d.getDate()-w); return ymd(d); }
+  function dowIdx(s){ return (parse(s).getDay()+6)%7; }
+  function md(s){ var p=s.split("-"); return (+p[1])+"/"+(+p[2]); }
+  function todayStr(){ return ymd(new Date()); }
+
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];}); }
+  function hue(name){ var h=0; for (var i=0;i<name.length;i++) h=(h*31+name.charCodeAt(i))>>>0; return [210,150,28,340,262,188,96,8,300,50,232,124][h%12]; }
+
+  // ---- 보기용 데이터
+  function visible(){
+    return S.events.filter(function(e){
+      if (S.company && e.company !== S.company) return false;
+      if (S.hideDone && e.status === "done") return false;
+      return true;
+    });
+  }
+  function byDate(list){ var m={}; list.forEach(function(e){ if(!e.date) return; (m[e.date]=m[e.date]||[]).push(e); }); return m; }
+  function groupCompany(list){
+    var m={}, order=[];
+    list.forEach(function(e){ if(!m[e.company]){ m[e.company]=[]; order.push(e.company); } m[e.company].push(e); });
+    order.sort(function(a,b){ return late(m[b])-late(m[a]) || urgentOpen(m[b])-urgentOpen(m[a]) || a.localeCompare(b,"ko"); });
+    return order.map(function(c){ return {company:c, items:m[c].slice().sort(sortItem)}; });
+  }
+  function sortItem(a,b){ var o={doing:0,todo:1,done:2}; return o[a.status]-o[b.status] || (b.urgent?1:0)-(a.urgent?1:0) || a.title.localeCompare(b.title,"ko"); }
+  function isLate(e){ return e.status!=="done" && e.date && e.date < todayStr(); }
+  function late(items){ return items.some(isLate)?1:0; }
+  function urgentOpen(items){ return items.some(function(e){ return e.urgent && e.status!=="done"; })?1:0; }
+
+  function chipHTML(g, attrs){
+    var all = g.items.every(function(e){ return e.status==="done"; });
+    return '<span class="chip'+(all?' alldone':'')+(urgentOpen(g.items)?' urgent':'')+'" style="--h:'+hue(g.company)+'" '+(attrs||'')+' title="'+esc(g.company+" "+g.items.length+"건")+'">'+
+      (late(g.items)?'<i class="late" aria-label="밀림"></i>':'')+'<span class="nm">'+esc(g.company)+'</span>'+(g.items.length>1?'<span class="ct">'+g.items.length+'</span>':'')+'</span>';
+  }
+
+  // ---- 렌더
+  function render(){
+    document.querySelectorAll(".seg button").forEach(function(b){ b.setAttribute("aria-pressed", String(b.dataset.view===S.view)); });
+    $("company").value = S.company; $("hideDone").checked = S.hideDone;
+    if (S.view==="month") renderMonth(); else if (S.view==="week") renderWeek(); else renderDay();
+  }
+
+  function renderMonth(){
+    var c = parse(S.cursor), y=c.getFullYear(), m=c.getMonth();
+    $("period").innerHTML = (m+1)+"월<small>"+y+"</small>";
+    var first = ymd(new Date(y,m,1)), start = mondayOf(first);
+    var last = new Date(y,m+1,0), end = addDays(mondayOf(ymd(last)),6);
+    var map = byDate(visible()), t = todayStr();
+    var h = '<section class="month" aria-label="월간 달력"><div class="dow">'+DOW.map(function(d){return "<div>"+d+"</div>";}).join("")+'</div><div class="grid">';
+    for (var d=start; d<=end; d=addDays(d,1)){
+      var inM = parse(d).getMonth()===m, wd = dowIdx(d)>=5;
+      var groups = groupCompany(map[d]||[]);
+      var max = window.innerWidth<640 ? 3 : 4;
+      h += '<div class="cell'+(inM?'':' out')+(wd?' weekend':'')+(d===t?' today':'')+'" data-day="'+d+'" role="button" tabindex="0" aria-label="'+md(d)+' 일정 '+(map[d]||[]).length+'건">'+
+        '<div class="dn"><b>'+(+d.slice(8))+'</b></div>'+
+        groups.slice(0,max).map(function(g){ return chipHTML(g); }).join("")+
+        (groups.length>max?'<span class="more">+'+(groups.length-max)+'곳</span>':'')+'</div>';
+    }
+    $("view").innerHTML = h+'</div></section>';
+  }
+
+  function renderWeek(){
+    var s = mondayOf(S.cursor), e = addDays(s,6), t = todayStr();
+    var sy = s.slice(0,4);
+    $("period").innerHTML = md(s)+" – "+md(e)+"<small>"+sy+"</small>";
+    var map = byDate(visible()), h = '<section class="week" aria-label="주간 달력">';
+    for (var i=0;i<7;i++){
+      var d = addDays(s,i), list = map[d]||[], groups = groupCompany(list);
+      h += '<div class="day'+(i>=5?' weekend':'')+(d===t?' today':'')+'">'+
+        '<button type="button" class="dayh" data-day="'+d+'"><span class="d">'+(+d.slice(8))+'</span><span class="w">'+DOW[i]+'</span><span class="n">'+(list.length?list.length+'건':'')+'</span></button>'+
+        '<div class="daybody">'+(groups.length? groups.map(function(g){
+          return '<div class="grp">'+chipHTML(g,'data-day="'+d+'"')+g.items.map(function(ev){
+            return '<button type="button" class="it'+(ev.status==="done"?' done':'')+(isLate(ev)?' late':'')+(ev.urgent?' urgent':'')+'" data-id="'+esc(ev.id)+'">'+esc(ev.title)+'</button>';
+          }).join("")+'</div>';
+        }).join("") : '<span class="empty">일정 없음</span>')+'</div></div>';
+    }
+    $("view").innerHTML = h+'</section>';
+  }
+
+  function rowHTML(ev, showDate){
+    return '<div class="row'+(ev.status==="done"?' done':'')+(isLate(ev)?' late':'')+'">'+
+      '<button type="button" class="st" data-toggle="'+esc(ev.id)+'" data-s="'+ev.status+'" title="눌러서 상태 바꾸기">'+STL[ev.status]+'</button>'+
+      '<div class="rt"><div class="t">'+(ev.urgent&&ev.status!=="done"?'<span class="tag u">긴급</span>':'')+(showDate?'<span class="tag p">'+md(ev.date)+'</span>':'')+esc(ev.title)+'</div>'+
+      ((ev.start||ev.note)?'<div class="m">'+(ev.start?'기간 '+md(ev.start)+' – '+md(ev.date)+(ev.note?' · ':''):'')+esc(ev.note||"")+'</div>':'')+'</div>'+
+      '<button type="button" class="edit" data-id="'+esc(ev.id)+'">수정</button></div>';
+  }
+  function groupsHTML(list, showDate){
+    return groupCompany(list).map(function(g){
+      return '<div class="cgroup"><div class="ch"><span class="dot" style="--h:'+hue(g.company)+'"></span>'+esc(g.company)+'</div>'+g.items.map(function(ev){ return rowHTML(ev, showDate); }).join("")+'</div>';
+    }).join("");
+  }
+
+  function renderDay(){
+    var d = S.cursor, t = todayStr(), i = dowIdx(d);
+    $("period").innerHTML = md(d)+" ("+DOW[i]+")<small>"+d.slice(0,4)+"</small>";
+    var vis = visible();
+    var list = vis.filter(function(e){ return e.date===d; });
+    var span = vis.filter(function(e){ return e.start && e.start<=d && e.date>d && e.status!=="done"; });
+    var lateList = S.events.filter(function(e){ return isLate(e) && (!S.company || e.company===S.company); }).sort(function(a,b){ return a.date<b.date?-1:1; });
+    var undated = vis.filter(function(e){ return !e.date; });
+    var h = '<section class="dayview"><div>'+
+      '<div class="panel"><h2>'+(d===t?'오늘':md(d))+' 일정 <span class="n">'+list.length+'</span><span class="hint">상태 버튼을 누르면 예정 → 진행 중 → 완료</span></h2>'+
+      (list.length? groupsHTML(list,false) : '<p class="none">이 날짜에 잡힌 일정이 없습니다. 오른쪽 위 「+ 일정」으로 추가하세요.</p>')+'</div>'+
+      (span.length?'<div class="panel" style="margin-top:12px"><h2>기간 중인 일 <span class="n">'+span.length+'</span></h2>'+groupsHTML(span,true)+'</div>':'')+
+      '</div><aside class="side">'+
+      '<div class="panel"><h2>밀린 일 <span class="n">'+lateList.length+'</span></h2>'+(lateList.length?'<div class="minilist">'+lateList.slice(0,40).map(function(e){
+        return '<button type="button" data-id="'+esc(e.id)+'"><span class="dot" style="--h:'+hue(e.company)+'"></span><span class="nm">'+esc(e.company)+' · '+esc(e.title)+'</span><span class="dd">'+md(e.date)+'</span></button>';
+      }).join("")+(lateList.length>40?'<p class="none">외 '+(lateList.length-40)+'건</p>':'')+'</div>':'<p class="none">마감이 지난 미완료 일정이 없습니다.</p>')+'</div>'+
+      (undated.length?'<div class="panel"><h2>날짜 미정 <span class="n">'+undated.length+'</span></h2><div class="minilist">'+undated.map(function(e){
+        return '<button type="button" data-id="'+esc(e.id)+'"><span class="dot" style="--h:'+hue(e.company)+'"></span><span class="nm">'+esc(e.company)+' · '+esc(e.title)+'</span></button>';
+      }).join("")+'</div></div>':'')+
+      '</aside></section>';
+    $("view").innerHTML = h;
+  }
+
+  function fillCompanies(){
+    var set = {}; S.events.forEach(function(e){ if(e.company) set[e.company]=1; });
+    var names = Object.keys(set).sort(function(a,b){ return a.localeCompare(b,"ko"); });
+    $("company").innerHTML = '<option value="">전체 업체</option>'+names.map(function(n){ return '<option value="'+esc(n)+'">'+esc(n)+'</option>'; }).join("");
+    if (S.company && !set[S.company]) S.company = "";
+    $("companyList").innerHTML = names.map(function(n){ return '<option value="'+esc(n)+'"></option>'; }).join("");
+  }
+
+  // ---- 이동
+  function move(dir){
+    if (S.view==="month"){ var c=parse(S.cursor); S.cursor = ymd(new Date(c.getFullYear(), c.getMonth()+dir, 1)); }
+    else S.cursor = addDays(S.cursor, S.view==="week"?7*dir:dir);
+    render();
+  }
+  function openDay(d){ S.view="day"; S.cursor=d; savePrefs(); render(); window.scrollTo({top:0}); }
+
+  $("prev").onclick = function(){ move(-1); };
+  $("next").onclick = function(){ move(1); };
+  $("today").onclick = function(){ S.cursor = todayStr(); render(); };
+  document.querySelectorAll(".seg button").forEach(function(b){ b.onclick = function(){ S.view=b.dataset.view; savePrefs(); render(); }; });
+  $("company").onchange = function(){ S.company=this.value; savePrefs(); render(); };
+  $("hideDone").onchange = function(){ S.hideDone=this.checked; savePrefs(); render(); };
+  $("add").onclick = function(){ openForm(null); };
+
+  $("view").addEventListener("click", function(ev){
+    var t = ev.target;
+    var tg = t.closest("[data-toggle]"); if (tg){ toggleStatus(tg.getAttribute("data-toggle")); return; }
+    var it = t.closest("[data-id]"); if (it){ openForm(find(it.getAttribute("data-id"))); return; }
+    var dy = t.closest("[data-day]"); if (dy){ openDay(dy.getAttribute("data-day")); }
+  });
+  $("view").addEventListener("keydown", function(ev){
+    if ((ev.key==="Enter"||ev.key===" ") && ev.target.classList.contains("cell")){ ev.preventDefault(); openDay(ev.target.getAttribute("data-day")); }
+  });
+  document.addEventListener("keydown", function(ev){
+    if ($("dlg").open || /INPUT|SELECT|TEXTAREA/.test((ev.target.tagName||""))) return;
+    if (ev.metaKey||ev.ctrlKey||ev.altKey) return;
+    if (ev.key==="ArrowLeft") move(-1);
+    else if (ev.key==="ArrowRight") move(1);
+    else if (ev.key==="t") { S.cursor=todayStr(); render(); }
+    else if (ev.key==="m"||ev.key==="w"||ev.key==="d") { S.view={m:"month",w:"week",d:"day"}[ev.key]; savePrefs(); render(); }
+    else if (ev.key==="n") openForm(null);
+  });
+  var rt; window.addEventListener("resize", function(){ clearTimeout(rt); rt=setTimeout(function(){ if(S.view==="month") render(); }, 150); });
+
+  function find(id){ return S.events.filter(function(e){ return e.id===id; })[0]||null; }
+
+  // ---- 쓰기 (문서마다 한 번에 하나씩)
+  var queues = {};
+  function write(id, fn){
+    var prev = queues[id] || Promise.resolve();
+    var next = prev.then(fn, fn);
+    queues[id] = next.catch(function(){});
+    return next;
+  }
+  function writeError(e){
+    var st = e && e.status;
+    var msg = st===401 ? "편집 키가 만료되었거나 잘못되었습니다. 아래 「편집 키 변경」에서 새 키를 넣어 주세요." :
+              st===403 || st===404 ? "이 편집 키로는 저장소에 쓸 수 없습니다. 키 권한(Contents: Read and write)을 확인하세요." :
+              (e && /Failed to fetch|NetworkError/i.test(e.message||"")) ? "인터넷 연결을 확인한 뒤 다시 시도하세요." :
+              "저장하지 못했습니다. 잠시 뒤 다시 시도하세요." + (e && e.message ? " ("+e.message+")" : "");
+    showBanner(msg);
+  }
+  function toggleStatus(id){
+    var e = find(id); if (!e || !S.store) return;
+    var s = NEXT[e.status];
+    e.status = s; render();   // 바로 반영, 저장 결과는 실시간으로 다시 들어옴
+    write(id, function(){ return S.store.patch(id, {status:s, updatedAt:new Date().toISOString()}); }).catch(writeError);
+  }
+
+  // ---- 입력 창
+  function openForm(e){
+    if (!S.store){ showBanner("저장소에 연결되지 않아 지금은 추가·수정할 수 없습니다. 새로고침해 보세요."); return; }
+    S.editing = e ? e.id : null;
+    $("dlgTitle").textContent = e ? "일정 수정" : "일정 추가";
+    $("fDate").value = e ? (e.date||"") : S.cursor;
+    $("fStart").value = e && e.start ? e.start : "";
+    $("fCompany").value = e ? e.company : (S.company||"");
+    $("fTitle").value = e ? e.title : "";
+    $("fNote").value = e ? (e.note||"") : "";
+    $("fUrgent").checked = !!(e && e.urgent);
+    var st = e ? e.status : "todo";
+    document.querySelectorAll('input[name="fStatus"]').forEach(function(r){ r.checked = r.value===st; });
+    $("fDel").hidden = !e; $("fErr").textContent = "";
+    $("dlg").showModal();
+    setTimeout(function(){ (e ? $("fTitle") : ($("fCompany").value ? $("fTitle") : $("fCompany"))).focus(); }, 0);
+  }
+  $("fCancel").onclick = function(){ $("dlg").close(); };
+  $("form").addEventListener("submit", function(ev){
+    ev.preventDefault();
+    var date = $("fDate").value, start = $("fStart").value, company = $("fCompany").value.trim(), title = $("fTitle").value.trim();
+    if (!company){ $("fErr").textContent = "업체를 적어 주세요. 업체가 없는 일은 「공통」으로 적습니다."; $("fCompany").focus(); return; }
+    if (!title){ $("fErr").textContent = "할 일을 적어 주세요."; $("fTitle").focus(); return; }
+    if (!date){ $("fErr").textContent = "날짜를 골라 주세요."; $("fDate").focus(); return; }
+    if (start && start > date){ $("fErr").textContent = "시작일이 마감 날짜보다 늦습니다."; $("fStart").focus(); return; }
+    var old = S.editing ? find(S.editing) : null;
+    var body = {
+      title:title, company:company, date:date, status:(document.querySelector('input[name="fStatus"]:checked')||{}).value||"todo",
+      urgent:$("fUrgent").checked, note:$("fNote").value.trim(), updatedAt:new Date().toISOString(),
+      source: old && old.source ? old.source : "manual"
+    };
+    if (start && start !== date) body.start = start;
+    if (old && old.notionId) body.notionId = old.notionId;
+    var id = S.editing || newId();
+    $("fSave").disabled = true;
+    write(id, function(){ return S.store.save(id, body); }).then(function(){
+      $("fSave").disabled = false; $("dlg").close();
+      if (!S.editing){ S.cursor = date; }
+    }).catch(function(e){ $("fSave").disabled = false; writeError(e); $("dlg").close(); });
+  });
+  $("fDel").onclick = function(){
+    var id = S.editing; if (!id) return;
+    var e = find(id);
+    if (!confirm("「"+(e?e.company+" · "+e.title:"이 일정")+"」을 지울까요?"+(S.store&&S.store.shared?" 모든 팀원 달력에서 사라집니다.":""))) return;
+    write(id, function(){ return S.store.remove(id); }).then(function(){ $("dlg").close(); }).catch(function(e){ writeError(e); $("dlg").close(); });
+  };
+
+  function showBanner(msg, ok){ var b=$("banner"); b.textContent=msg; b.classList.toggle("ok", !!ok); b.hidden=false; clearTimeout(showBanner.t); showBanner.t=setTimeout(function(){ b.hidden=true; }, 6000); }
+  function setSync(text, live){ var s=$("sync"); s.classList.toggle("live", !!live); s.querySelector("span").textContent=text; }
+
+  // =====================================================================
+  //  저장소 — GitHub 저장소의 data/events.json 파일
+  //  · 편집 키(토큰)가 있으면: GitHub API로 바로 읽고, 저장하면 커밋
+  //  · 편집 키가 없으면: 배포된 data/events.json 을 읽기만 함
+  // =====================================================================
+  var CFG = window.BIZCAL_CONFIG || {};
+  var KEY_STORE = "bizcal.githubToken";
+  var POLL_MS = 60000;
+
+  function newId(){ return "m" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+  function norm(id, o){
+    return {
+      id:id, title:String(o.title||""), company:String(o.company||"공통"), date:String(o.date||""), start:o.start?String(o.start):"",
+      status: STL[o.status]?o.status:"todo", urgent:!!o.urgent, note:String(o.note||""), source:o.source||"", notionId:o.notionId||"",
+      updatedAt:o.updatedAt||""
+    };
+  }
+  function repoInfo(){
+    var owner = CFG.owner, repo = CFG.repo;
+    var host = location.hostname;
+    if ((!owner || !repo) && /\.github\.io$/i.test(host)){
+      owner = owner || host.split(".")[0];
+      repo = repo || location.pathname.split("/")[1] || (owner + ".github.io");
+    }
+    return { owner:owner||"", repo:repo||"", branch:CFG.branch||"main", path:CFG.dataPath||"data/events.json" };
+  }
+  function getToken(){ try { return localStorage.getItem(KEY_STORE)||""; } catch(e){ return ""; } }
+  function setToken(t){ try { if (t) localStorage.setItem(KEY_STORE, t); else localStorage.removeItem(KEY_STORE); } catch(e){} }
+
+  function b64encode(str){
+    var bytes = new TextEncoder().encode(str), bin = "";
+    for (var i=0; i<bytes.length; i+=0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i+0x8000));
+    return btoa(bin);
+  }
+  function b64decode(b64){
+    var bin = atob(b64.replace(/\s/g,"")), bytes = new Uint8Array(bin.length);
+    for (var i=0; i<bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  }
+  function httpError(res, body){
+    var e = new Error((body && body.message) || ("HTTP " + res.status)); e.status = res.status; return e;
+  }
+
+  function GitHubStore(){
+    var R = repoInfo();
+    var api = "https://api.github.com/repos/" + R.owner + "/" + R.repo;
+    var map = {}, order = [], sha = null, listener = null, chain = Promise.resolve(), pending = 0;
+
+    function headers(){
+      var h = { "Accept":"application/vnd.github+json", "X-GitHub-Api-Version":"2022-11-28" };
+      var t = getToken(); if (t) h.Authorization = "Bearer " + t;
+      return h;
+    }
+    function emit(){ listener && listener(Object.keys(map).map(function(k){ return norm(k, map[k]); })); }
+    function setAll(list){
+      map = {}; (Array.isArray(list)?list:[]).forEach(function(o){ if (!o || !o.id) return; var c = Object.assign({}, o); delete c.id; map[o.id] = c; });
+    }
+    function toList(){
+      return Object.keys(map).map(function(k){ return Object.assign({id:k}, map[k]); })
+        .sort(function(a,b){ return (a.date||"9999").localeCompare(b.date||"9999") || String(a.company).localeCompare(String(b.company)) || a.id.localeCompare(b.id); });
+    }
+
+    // 최신 파일 읽기
+    function fetchRemote(){
+      if (getToken() && R.owner){
+        return fetch(api + "/contents/" + R.path + "?ref=" + encodeURIComponent(R.branch) + "&t=" + Date.now(), {headers:headers(), cache:"no-store"})
+          .then(function(res){
+            return res.json().then(function(body){
+              if (res.status === 404) return { list:[], sha:null };
+              if (!res.ok) throw httpError(res, body);
+              var text = body.content ? b64decode(body.content) : "";
+              if (!text && body.download_url){   // 1MB 넘는 파일
+                return fetch(body.download_url + "?t=" + Date.now(), {cache:"no-store"}).then(function(r){ return r.json(); })
+                  .then(function(list){ return { list:list, sha:body.sha }; });
+              }
+              return { list: text ? JSON.parse(text) : [], sha: body.sha };
+            });
+          });
+      }
+      return fetch(R.path + "?t=" + Date.now(), {cache:"no-store"}).then(function(res){
+        if (!res.ok) throw httpError(res);
+        return res.json().then(function(list){ return { list:list, sha:null }; });
+      });
+    }
+    function refresh(){
+      if (pending) return Promise.resolve();
+      return fetchRemote().then(function(r){ if (pending) return; setAll(r.list); sha = r.sha; emit(); return order.length; });
+    }
+
+    // 변경 1건 = 커밋 1건. 다른 사람이 먼저 저장했으면 최신본을 받아 다시 적용
+    function commit(apply, message){
+      pending++;
+      apply(map); emit();                                    // 화면에는 바로 반영
+      var run = chain.then(function(){
+        var tries = 0;
+        function attempt(){
+          tries++;
+          return fetchRemote().then(function(r){
+            setAll(r.list); sha = r.sha; apply(map);
+            var body = { message: message, content: b64encode(JSON.stringify(toList(), null, 1) + "\n"), branch: R.branch };
+            if (sha) body.sha = sha;
+            return fetch(api + "/contents/" + R.path, { method:"PUT", headers:headers(), body: JSON.stringify(body) })
+              .then(function(res){
+                return res.json().then(function(out){
+                  if (res.ok){ sha = out.content && out.content.sha; return; }
+                  if ((res.status === 409 || res.status === 422) && tries < 4) return new Promise(function(ok){ setTimeout(ok, 400*tries); }).then(attempt);
+                  throw httpError(res, out);
+                });
+              });
+          });
+        }
+        return attempt();
+      });
+      chain = run.catch(function(){});
+      return run.then(function(){ pending--; emit(); }, function(e){ pending--; refresh().catch(function(){}); throw e; });
+    }
+    function label(b){ return (b && (b.company + " · " + b.title)) || ""; }
+
+    var store = {
+      repo: R,
+      canEdit: function(){ return !!getToken(); },
+      start: function(onData){
+        listener = onData;
+        document.addEventListener("visibilitychange", function(){ if (!document.hidden) refresh().catch(function(){}); });
+        setInterval(function(){ if (!document.hidden) refresh().catch(function(){}); }, POLL_MS);
+        return refresh();
+      },
+      save: function(id, body){
+        var isNew = !map[id];
+        return commit(function(m){ m[id] = Object.assign({}, body); }, (isNew ? "일정 추가: " : "일정 수정: ") + label(body));
+      },
+      patch: function(id, fields){
+        var b = map[id];
+        return commit(function(m){ if (m[id]) Object.assign(m[id], fields); }, "상태 변경: " + label(b) + " → " + (STL[fields.status]||""));
+      },
+      remove: function(id){
+        var b = map[id];
+        return commit(function(m){ delete m[id]; }, "일정 삭제: " + label(b));
+      },
+      reload: function(){ refresh().catch(function(){}); },
+      checkToken: function(t){
+        return fetch(api, { headers: { "Accept":"application/vnd.github+json", "Authorization":"Bearer " + t } })
+          .then(function(res){ return res.json().then(function(b){
+            if (res.status === 401) throw new Error("키가 올바르지 않거나 만료되었습니다.");
+            if (res.status === 404) throw new Error("이 키로는 " + R.owner + "/" + R.repo + " 저장소가 보이지 않습니다. 키를 만들 때 이 저장소를 선택했는지 확인하세요.");
+            if (!res.ok) throw httpError(res, b);
+            if (b.permissions && !b.permissions.push) throw new Error("읽기 권한만 있는 키입니다. Contents 권한을 Read and write 로 만들어 주세요.");
+            return true;
+          }); });
+      }
+    };
+    return store;
+  }
+
+  // ---- 편집 키 입력 창
+  function openKeyDialog(){
+    var d = $("keyDlg");
+    $("kRepo").textContent = S.store && S.store.repo.owner ? (S.store.repo.owner + "/" + S.store.repo.repo) : "(config.js 에 저장소를 적어 주세요)";
+    $("kToken").value = ""; $("kErr").textContent = "";
+    $("kForget").hidden = !getToken();
+    d.showModal(); setTimeout(function(){ $("kToken").focus(); }, 0);
+  }
+  $("kCancel").onclick = function(){ $("keyDlg").close(); };
+  $("kForget").onclick = function(){ setToken(""); $("keyDlg").close(); updateSync(); S.store.reload(); };
+  $("keyForm").addEventListener("submit", function(ev){
+    ev.preventDefault();
+    var t = $("kToken").value.trim();
+    if (!t){ $("kErr").textContent = "키를 붙여 넣어 주세요."; return; }
+    $("kSave").disabled = true; $("kErr").textContent = "확인 중…";
+    S.store.checkToken(t).then(function(){
+      setToken(t); $("kSave").disabled = false; $("keyDlg").close(); updateSync(); S.store.reload();
+      showBanner("편집 키를 저장했습니다. 이제 이 브라우저에서 일정을 추가·수정할 수 있습니다.", true);
+    }).catch(function(e){ $("kSave").disabled = false; $("kErr").textContent = e.message || "확인하지 못했습니다."; });
+  });
+  $("keyBtn").onclick = openKeyDialog;
+
+  // ---- 시작: 먼저 빈 달력을 그리고, 파일을 읽어 채운다
+  render();
+  function onData(list){ S.events = list; S.ready = true; fillCompanies(); render(); updateSync(); }
+  function updateSync(){
+    if (!S.store) return;
+    var edit = S.store.canEdit();
+    setSync((edit ? "GitHub 저장소와 동기화 · " : "보기 전용 · ") + S.events.length + "건", edit);
+    $("keyBtn").textContent = edit ? "편집 키 변경" : "편집 키 입력";
+  }
+  S.store = GitHubStore();
+  var baseOpenForm = openForm;
+  openForm = function(e){
+    if (!S.store.canEdit()){ openKeyDialog(); return; }
+    baseOpenForm(e);
+  };
+  var baseToggle = toggleStatus;
+  toggleStatus = function(id){
+    if (!S.store.canEdit()){ openKeyDialog(); return; }
+    baseToggle(id);
+  };
+  S.store.start(onData).then(updateSync).catch(function(e){
+    setSync("일정 파일을 불러오지 못했습니다 — " + (e.status===401 ? "편집 키가 만료되었습니다. 새 키를 입력하세요." : "새로고침해 주세요"));
+    if (e.status === 401){ setToken(""); }
+    if (window.console) console.error(e);
+  });
+})();

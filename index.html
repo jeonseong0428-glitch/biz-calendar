@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2C4E85">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗓️</text></svg>">
+<title>사업팀 달력</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#F3F5F2; --surface:#FFFFFF; --sunk:#EBEEEA; --ink:#17201C; --ink2:#3D4843; --muted:#68736D; --line:#DAE0DB; --line2:#C6CEC8;
+  --accent:#2C4E85; --accent-ink:#FFFFFF; --accent-soft:#E4EBF6; --today:#EEF3FB;
+  --crit:#B3342B; --crit-soft:#F8E3E1; --done:#8C958F;
+  --chip-l:92%; --chip-s:52%; --chip-fg-l:27%; --chip-fg-s:48%;
+  --shadow:0 1px 2px rgba(20,30,25,.06),0 12px 32px -16px rgba(20,30,25,.28);
+  --f:"IBM Plex Sans KR","Pretendard","Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"D2Coding",monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#111513; --surface:#191E1B; --sunk:#141816; --ink:#E5EBE7; --ink2:#C2CBC6; --muted:#94A09A; --line:#29312D; --line2:#37413C;
+    --accent:#8FB0E6; --accent-ink:#0F1A2C; --accent-soft:#1C2940; --today:#18223A;
+    --crit:#EE8B82; --crit-soft:#3A1F1C; --done:#6E7872;
+    --chip-l:21%; --chip-s:28%; --chip-fg-l:82%; --chip-fg-s:55%;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 14px 36px -16px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#111513; --surface:#191E1B; --sunk:#141816; --ink:#E5EBE7; --ink2:#C2CBC6; --muted:#94A09A; --line:#29312D; --line2:#37413C;
+  --accent:#8FB0E6; --accent-ink:#0F1A2C; --accent-soft:#1C2940; --today:#18223A;
+  --crit:#EE8B82; --crit-soft:#3A1F1C; --done:#6E7872;
+  --chip-l:21%; --chip-s:28%; --chip-fg-l:82%; --chip-fg-s:55%;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 14px 36px -16px rgba(0,0,0,.8);
+}
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0}
+body{padding-top:env(safe-area-inset-top,0px)}
+html,body{background:var(--bg)}
+body{color:var(--ink);font:14px/1.5 var(--f);padding-inline:clamp(12px,3vw,32px);padding-block:0 40px;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1320px;margin:0 auto}
+
+/* 상단 */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding-block:14px 10px;display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;border-bottom:1px solid var(--line)}
+.brand{font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.04em;margin-right:4px;white-space:nowrap}
+.nav{display:flex;align-items:center;gap:6px}
+.iconbtn{width:34px;height:34px;border-radius:8px;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center;color:var(--ink2)}
+.iconbtn:hover{border-color:var(--line2);background:var(--sunk)}
+.iconbtn svg{width:16px;height:16px}
+.period{font-size:22px;font-weight:600;letter-spacing:-.02em;min-width:9ch;text-align:center;white-space:nowrap;font-variant-numeric:tabular-nums}
+.period small{font:500 13px var(--mono);color:var(--muted);margin-left:6px;letter-spacing:0}
+.btn{height:34px;padding:0 12px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink2);font-size:13px;white-space:nowrap}
+.btn:hover{border-color:var(--line2);background:var(--sunk)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:500}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;background:var(--surface);padding:2px}
+.seg button{border:0;background:none;height:28px;padding:0 14px;border-radius:7px;font-size:13px;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg);font-weight:500}
+.sp{flex:1}
+.tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.sel{height:34px;border-radius:8px;border:1px solid var(--line);background:var(--surface);padding:0 28px 0 10px;font-size:13px;max-width:180px}
+.check{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink2);white-space:nowrap}
+.check input{accent-color:var(--accent);width:15px;height:15px}
+.sync{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;white-space:nowrap}
+.sync i{width:7px;height:7px;border-radius:50%;background:var(--done);display:inline-block}
+.sync.live i{background:#3E9B62}
+.banner{margin-top:12px;padding:10px 14px;border-radius:8px;background:var(--crit-soft);color:var(--crit);font-size:13px}
+
+/* 업체 칩 — 색은 업체명으로 고정 */
+.chip{--h:210;display:flex;align-items:center;gap:5px;min-width:0;padding:1px 6px;border-radius:5px;font-size:12px;line-height:18px;
+  background:hsl(var(--h) var(--chip-s) var(--chip-l));color:hsl(var(--h) var(--chip-fg-s) var(--chip-fg-l));border:0;text-align:left;width:100%}
+.chip .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.chip .ct{font:500 11px var(--mono);opacity:.8;margin-left:auto;flex:none}
+.chip.alldone{background:transparent;color:var(--done);text-decoration:line-through;box-shadow:inset 0 0 0 1px var(--line)}
+.chip .late{width:6px;height:6px;border-radius:50%;background:var(--crit);flex:none}
+.chip.urgent .nm{font-weight:600}
+.dot{--h:210;width:8px;height:8px;border-radius:3px;background:hsl(var(--h) 55% 50%);flex:none;display:inline-block}
+
+/* 월간 */
+.month{margin-top:14px;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.dow,.grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
+.dow div{padding:8px 10px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--line)}
+.dow div:nth-child(n+6){color:var(--done)}
+.cell{min-height:118px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:6px 6px 8px;display:flex;flex-direction:column;gap:3px;cursor:pointer;min-width:0;background:var(--surface)}
+.cell:nth-child(7n){border-right:0}
+.cell:hover{background:var(--sunk)}
+.cell.out{background:var(--sunk)}
+.cell.out .dn{color:var(--done)}
+.cell.weekend .dn{color:var(--muted)}
+.cell.today{background:var(--today)}
+.dn{font:500 12px var(--mono);color:var(--ink2);display:flex;align-items:center;gap:6px;margin-bottom:2px}
+.cell.today .dn b{background:var(--accent);color:var(--accent-ink);border-radius:5px;padding:0 5px}
+.dn b{font-weight:500}
+.more{font-size:11px;color:var(--muted);padding-left:6px}
+
+/* 주간 */
+.week{margin-top:14px;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}
+.day{background:var(--surface);border:1px solid var(--line);border-radius:10px;min-height:340px;display:flex;flex-direction:column;min-width:0}
+.day.today{border-color:var(--accent);box-shadow:inset 0 2px 0 var(--accent)}
+.day.weekend{background:var(--sunk)}
+.dayh{display:flex;align-items:baseline;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line);cursor:pointer;background:none;border-top:0;border-left:0;border-right:0;width:100%;text-align:left}
+.dayh .w{font-size:12px;color:var(--muted)}
+.dayh .d{font:500 17px var(--mono)}
+.dayh .n{margin-left:auto;font:500 11px var(--mono);color:var(--muted)}
+.daybody{padding:8px;display:flex;flex-direction:column;gap:10px}
+.grp{display:flex;flex-direction:column;gap:2px}
+.grp .chip{margin-bottom:2px}
+.it{display:block;width:100%;text-align:left;border:0;background:none;padding:2px 4px 2px 8px;font-size:12.5px;line-height:1.4;color:var(--ink2);border-radius:4px}
+.it:hover{background:var(--sunk)}
+.it.done{color:var(--done);text-decoration:line-through}
+.it.late{color:var(--crit)}
+.it.urgent:not(.done)::before{content:"긴급 ";font-size:10.5px;font-weight:600;color:var(--crit)}
+.empty{font-size:12px;color:var(--done);padding:4px}
+
+/* 일간 */
+.dayview{margin-top:14px;display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;align-items:start}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px}
+.panel h2{margin:0;font-size:15px;font-weight:600;padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+.panel h2 .n{font:500 12px var(--mono);color:var(--muted)}
+.panel h2 .hint{margin-left:auto;font-size:12px;font-weight:400;color:var(--muted)}
+.cgroup{padding:12px 16px;border-bottom:1px solid var(--line)}
+.cgroup:last-child{border-bottom:0}
+.cgroup .ch{display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:6px}
+.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:start;padding:7px 0;border-top:1px dashed var(--line)}
+.cgroup .row:first-of-type{border-top:0}
+.st{height:26px;min-width:52px;padding:0 8px;border-radius:13px;border:1px solid var(--line2);background:var(--surface);font-size:12px;color:var(--ink2);white-space:nowrap}
+.st[data-s="doing"]{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.st[data-s="done"]{background:var(--sunk);color:var(--done);border-color:var(--line)}
+.rt{min-width:0}
+.rt .t{font-size:14px;color:var(--ink)}
+.row.done .rt .t{color:var(--done);text-decoration:line-through}
+.row.late .rt .t{color:var(--crit)}
+.rt .m{font-size:12px;color:var(--muted);margin-top:1px;overflow-wrap:anywhere}
+.tag{display:inline-block;font-size:10.5px;font-weight:600;padding:0 5px;border-radius:4px;margin-right:6px;vertical-align:1px}
+.tag.u{background:var(--crit-soft);color:var(--crit)}
+.tag.p{background:var(--sunk);color:var(--muted);font-family:var(--mono);font-weight:500}
+.edit{border:0;background:none;color:var(--muted);height:26px;padding:0 6px;border-radius:6px;font-size:12px}
+.edit:hover{background:var(--sunk);color:var(--ink)}
+.side .panel+.panel{margin-top:12px}
+.minilist{padding:6px 12px 10px}
+.minilist button{display:flex;gap:8px;align-items:center;width:100%;text-align:left;border:0;background:none;padding:6px 4px;border-radius:6px;font-size:13px;color:var(--ink2)}
+.minilist button:hover{background:var(--sunk)}
+.minilist .dd{font:500 11px var(--mono);color:var(--crit);margin-left:auto;flex:none}
+.minilist .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.none{padding:16px;color:var(--muted);font-size:13px}
+
+/* 입력 창 */
+dialog{border:0;padding:0;border-radius:14px;background:var(--surface);color:var(--ink);box-shadow:var(--shadow);width:min(460px,calc(100vw - 32px))}
+dialog::backdrop{background:rgba(15,20,18,.38)}
+.form{padding:18px 18px 16px;display:flex;flex-direction:column;gap:12px}
+.form h3{margin:0 0 2px;font-size:16px}
+.f{display:flex;flex-direction:column;gap:4px}
+.f label,.f .lb{font-size:12px;color:var(--muted)}
+.f input[type=text],.f input[type=date],.f textarea{border:1px solid var(--line);border-radius:8px;background:var(--bg);padding:8px 10px;font-size:14px;width:100%}
+.f textarea{min-height:64px;resize:vertical}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.radios{display:flex;gap:6px;flex-wrap:wrap}
+.radios label{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:13px;color:var(--ink2);cursor:pointer}
+.radios input{accent-color:var(--accent)}
+.actions{display:flex;gap:8px;align-items:center;margin-top:4px}
+.btn.danger{color:var(--crit);border-color:transparent;background:none;padding-left:0}
+.err{font-size:12px;color:var(--crit);min-height:1em}
+
+@media (max-width:980px){
+  .dayview{grid-template-columns:minmax(0,1fr)}
+  .week{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:640px){
+  .period{font-size:18px;min-width:0}
+  .cell{min-height:74px;padding:4px 3px}
+  .cell .chip{font-size:10.5px;padding:0 3px;line-height:16px}
+  .cell .chip .ct{display:none}
+  .cell .chip .late{display:none}
+  .dow div{padding:6px 4px;text-align:center}
+  .week{grid-template-columns:minmax(0,1fr)}
+  .day{min-height:0}
+  .two{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion:no-preference){ .cell,.it,.btn,.chip{transition:background-color .12s,border-color .12s} }
+.banner.ok{background:var(--accent-soft);color:var(--ink)}
+.foot{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-top:10px}
+.foot .sync{margin:0}
+.linkbtn{border:0;background:none;padding:2px 0;color:var(--accent);font:inherit;font-size:12px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.linkbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+.keyhelp{margin:0;font-size:12.5px;color:var(--muted);line-height:1.6}
+.keyhelp ol{margin:4px 0 0;padding-left:18px}
+.keyhelp code{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:12px;background:var(--sunk);padding:1px 5px;border-radius:4px;color:var(--ink2)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <span class="brand">사업팀 달력</span>
+    <div class="nav">
+      <button class="iconbtn" id="prev" type="button" aria-label="이전"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="period" id="period" aria-live="polite"></div>
+      <button class="iconbtn" id="next" type="button" aria-label="다음"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 5l7 7-7 7"/></svg></button>
+      <button class="btn" id="today" type="button">오늘</button>
+    </div>
+    <div class="seg" role="group" aria-label="보기">
+      <button type="button" data-view="month">월간</button>
+      <button type="button" data-view="week">주간</button>
+      <button type="button" data-view="day">일간</button>
+    </div>
+    <div class="sp"></div>
+    <div class="tools">
+      <select class="sel" id="company" aria-label="업체"><option value="">전체 업체</option></select>
+      <label class="check"><input type="checkbox" id="hideDone"> 완료 숨기기</label>
+      <button class="btn primary" id="add" type="button">+ 일정</button>
+    </div>
+  </header>
+  <div class="banner" id="banner" hidden></div>
+  <main id="view"></main>
+  <div class="foot">
+    <p class="sync" id="sync"><i></i><span>불러오는 중…</span></p>
+    <button class="linkbtn" id="keyBtn" type="button">편집 키 입력</button>
+  </div>
+</div>
+
+<dialog id="dlg" aria-labelledby="dlgTitle">
+  <form class="form" id="form" method="dialog">
+    <h3 id="dlgTitle">일정 추가</h3>
+    <div class="two">
+      <div class="f"><label for="fDate">날짜 (마감)</label><input type="date" id="fDate"></div>
+      <div class="f"><label for="fStart">시작일 <span>(기간 일정만)</span></label><input type="date" id="fStart"></div>
+    </div>
+    <div class="f"><label for="fCompany">업체</label><input type="text" id="fCompany" list="companyList" autocomplete="off" placeholder="예: 코삿"><datalist id="companyList"></datalist></div>
+    <div class="f"><label for="fTitle">할 일</label><input type="text" id="fTitle" autocomplete="off" placeholder="예: 중간점검 자료 제출"></div>
+    <div class="f"><span class="lb">상태</span>
+      <div class="radios">
+        <label><input type="radio" name="fStatus" id="fS1" value="todo" checked> 예정</label>
+        <label><input type="radio" name="fStatus" id="fS2" value="doing"> 진행 중</label>
+        <label><input type="radio" name="fStatus" id="fS3" value="done"> 완료</label>
+        <label><input type="checkbox" id="fUrgent"> 긴급</label>
+      </div>
+    </div>
+    <div class="f"><label for="fNote">메모</label><textarea id="fNote" placeholder="필요하면 적어 두세요"></textarea></div>
+    <p class="err" id="fErr"></p>
+    <div class="actions">
+      <button type="button" class="btn danger" id="fDel" hidden>삭제</button>
+      <div class="sp"></div>
+      <button type="button" class="btn" id="fCancel">취소</button>
+      <button type="submit" class="btn primary" id="fSave">저장</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="keyDlg" aria-labelledby="keyTitle">
+  <form class="form" id="keyForm" method="dialog">
+    <h3 id="keyTitle">편집 키 입력</h3>
+    <p class="keyhelp">일정을 추가·수정하면 GitHub 저장소 <code id="kRepo"></code> 에 바로 저장됩니다. 저장하려면 이 저장소에 쓸 수 있는 키가 한 번 필요합니다. 키는 이 브라우저에만 보관됩니다.</p>
+    <div class="f"><label for="kToken">GitHub 키 (github_pat_로 시작)</label><input type="password" id="kToken" autocomplete="off" spellcheck="false" placeholder="github_pat_..."></div>
+    <div class="keyhelp">키가 없다면
+      <ol>
+        <li>GitHub → Settings → Developer settings → Fine-grained tokens → <b>Generate new token</b></li>
+        <li>Repository access: <b>Only select repositories</b> → 이 달력 저장소</li>
+        <li>Permissions → Repository → <b>Contents: Read and write</b> → Generate</li>
+      </ol>
+    </div>
+    <p class="err" id="kErr"></p>
+    <div class="actions">
+      <button type="button" class="btn danger" id="kForget" hidden>이 브라우저에서 키 지우기</button>
+      <div class="sp"></div>
+      <button type="button" class="btn" id="kCancel">취소</button>
+      <button type="submit" class="btn primary" id="kSave">저장</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
