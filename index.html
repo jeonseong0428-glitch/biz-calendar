@@ -239,6 +239,10 @@ dialog::backdrop{background:rgba(15,20,18,.38)}
 .yseg button[aria-pressed="true"]{background:var(--ink);color:var(--bg);font-weight:500}
 #fYearNote{color:var(--muted);font-size:11.5px}
 @media (max-width:640px){ .yearseg button{padding:0 8px;font-size:12px} .yrow{flex-wrap:wrap} }
+/* 오늘로 이동했을 때 잠깐 표시 */
+@keyframes flashToday{0%,40%{box-shadow:inset 0 0 0 3px var(--accent)}100%{box-shadow:inset 0 0 0 0 transparent}}
+.flash{animation:flashToday 1.6s ease-out}
+@media (prefers-reduced-motion:reduce){ .flash{animation:none;box-shadow:inset 0 0 0 3px var(--accent)} }
 </style>
 </head>
 <body>

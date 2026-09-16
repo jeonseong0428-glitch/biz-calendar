@@ -221,7 +221,16 @@
 
   $("prev").onclick = function(){ move(-1); };
   $("next").onclick = function(){ move(1); };
-  $("today").onclick = function(){ S.cursor = todayStr(); render(); };
+  // 「오늘」: 지금 보는 화면(월간·주간·일간) 그대로 오늘이 있는 달·주·날로 옮기고, 오늘 칸으로 스크롤해 잠깐 반짝이게 한다
+  function goToday(){
+    S.cursor = todayStr(); render();
+    var el = document.querySelector("#view .cell.today, #view .day.today") || document.querySelector("#view .panel");
+    if (!el) return;
+    var top = el.getBoundingClientRect().top + window.scrollY - document.querySelector(".top").offsetHeight - 12;
+    window.scrollTo({top: Math.max(0, top), behavior: "smooth"});
+    el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
+  }
+  $("today").onclick = goToday;
   document.querySelectorAll(".seg button").forEach(function(b){ b.onclick = function(){ S.view=b.dataset.view; savePrefs(); render(); }; });
   $("company").onchange = function(){ S.company=this.value; savePrefs(); render(); };
   document.querySelectorAll("#yearSeg button").forEach(function(b){ b.onclick = function(){
@@ -246,7 +255,7 @@
     if (ev.metaKey||ev.ctrlKey||ev.altKey) return;
     if (ev.key==="ArrowLeft") move(-1);
     else if (ev.key==="ArrowRight") move(1);
-    else if (ev.key==="t") { S.cursor=todayStr(); render(); }
+    else if (ev.key==="t") goToday();
     else if (ev.key==="m"||ev.key==="w"||ev.key==="d") { S.view={m:"month",w:"week",d:"day"}[ev.key]; savePrefs(); render(); }
     else if (ev.key==="n") openForm(null);
   });
