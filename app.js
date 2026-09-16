@@ -187,10 +187,7 @@
     return next;
   }
   function writeError(e){
-    var st = e && e.status;
-    var msg = st===401 ? "편집 키가 만료되었거나 잘못되었습니다. 아래 「편집 키 변경」에서 새 키를 넣어 주세요." :
-              st===403 || st===404 ? "이 편집 키로는 저장소에 쓸 수 없습니다. 키 권한(Contents: Read and write)을 확인하세요." :
-              (e && /Failed to fetch|NetworkError/i.test(e.message||"")) ? "인터넷 연결을 확인한 뒤 다시 시도하세요." :
+    var msg = (e && /Failed to fetch|NetworkError/i.test(e.message||"")) ? "인터넷 연결을 확인한 뒤 다시 시도하세요." :
               "저장하지 못했습니다. 잠시 뒤 다시 시도하세요." + (e && e.message ? " ("+e.message+")" : "");
     showBanner(msg);
   }
@@ -252,204 +249,75 @@
   function setSync(text, live){ var s=$("sync"); s.classList.toggle("live", !!live); s.querySelector("span").textContent=text; }
 
   // =====================================================================
-  //  저장소 — GitHub 저장소의 data/events.json 파일
-  //  · 편집 키(토큰)가 있으면: GitHub API로 바로 읽고, 저장하면 커밋
-  //  · 편집 키가 없으면: 배포된 data/events.json 을 읽기만 함
+  //  저장소 — 구글 시트 (Apps Script 웹 앱). 링크만 있으면 누구나 보기·추가·수정
   // =====================================================================
   var CFG = window.BIZCAL_CONFIG || {};
-  var KEY_STORE = "bizcal.githubToken";
-  var POLL_MS = 60000;
+  var POLL_MS = 20000;
 
   function newId(){ return "m" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
-  function norm(id, o){
+  function norm(o){
     return {
-      id:id, title:String(o.title||""), company:String(o.company||"공통"), date:String(o.date||""), start:o.start?String(o.start):"",
-      status: STL[o.status]?o.status:"todo", urgent:!!o.urgent, note:String(o.note||""), source:o.source||"", notionId:o.notionId||"",
-      updatedAt:o.updatedAt||""
+      id:String(o.id), title:String(o.title||""), company:String(o.company||"공통"), date:String(o.date||""), start:o.start?String(o.start):"",
+      status: STL[o.status]?o.status:"todo", urgent:o.urgent===true||String(o.urgent).toUpperCase()==="TRUE", note:String(o.note||""),
+      source:o.source||"", notionId:o.notionId||"", updatedAt:o.updatedAt||""
     };
   }
-  function repoInfo(){
-    var owner = CFG.owner, repo = CFG.repo;
-    var host = location.hostname;
-    if ((!owner || !repo) && /\.github\.io$/i.test(host)){
-      owner = owner || host.split(".")[0];
-      repo = repo || location.pathname.split("/")[1] || (owner + ".github.io");
-    }
-    return { owner:owner||"", repo:repo||"", branch:CFG.branch||"main", path:CFG.dataPath||"data/events.json" };
-  }
-  function getToken(){ try { return localStorage.getItem(KEY_STORE)||""; } catch(e){ return ""; } }
-  function setToken(t){ try { if (t) localStorage.setItem(KEY_STORE, t); else localStorage.removeItem(KEY_STORE); } catch(e){} }
 
-  function b64encode(str){
-    var bytes = new TextEncoder().encode(str), bin = "";
-    for (var i=0; i<bytes.length; i+=0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i+0x8000));
-    return btoa(bin);
-  }
-  function b64decode(b64){
-    var bin = atob(b64.replace(/\s/g,"")), bytes = new Uint8Array(bin.length);
-    for (var i=0; i<bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    return new TextDecoder().decode(bytes);
-  }
-  function httpError(res, body){
-    var e = new Error((body && body.message) || ("HTTP " + res.status)); e.status = res.status; return e;
-  }
-
-  function GitHubStore(){
-    var R = repoInfo();
-    var api = "https://api.github.com/repos/" + R.owner + "/" + R.repo;
-    var map = {}, order = [], sha = null, listener = null, chain = Promise.resolve(), pending = 0;
-
-    function headers(){
-      var h = { "Accept":"application/vnd.github+json", "X-GitHub-Api-Version":"2022-11-28" };
-      var t = getToken(); if (t) h.Authorization = "Bearer " + t;
-      return h;
+  function SheetStore(url){
+    var map = {}, listener = null, pending = 0, lastOk = null;
+    function emit(){ listener && listener(Object.keys(map).map(function(k){ return norm(map[k]); })); }
+    function fetchAll(){
+      return fetch(url + (url.indexOf("?")<0?"?":"&") + "t=" + Date.now(), {cache:"no-store", redirect:"follow"})
+        .then(function(res){ if (!res.ok) throw new Error("HTTP " + res.status); return res.json(); })
+        .then(function(body){
+          if (!body.ok) throw new Error(body.error || "불러오기 실패");
+          if (pending) return;
+          map = {}; body.rows.forEach(function(o){ if (o.id) map[o.id] = o; });
+          lastOk = new Date(); emit();
+        });
     }
-    function emit(){ listener && listener(Object.keys(map).map(function(k){ return norm(k, map[k]); })); }
-    function setAll(list){
-      map = {}; (Array.isArray(list)?list:[]).forEach(function(o){ if (!o || !o.id) return; var c = Object.assign({}, o); delete c.id; map[o.id] = c; });
-    }
-    function toList(){
-      return Object.keys(map).map(function(k){ return Object.assign({id:k}, map[k]); })
-        .sort(function(a,b){ return (a.date||"9999").localeCompare(b.date||"9999") || String(a.company).localeCompare(String(b.company)) || a.id.localeCompare(b.id); });
-    }
-
-    // 최신 파일 읽기
-    function fetchRemote(){
-      if (getToken() && R.owner){
-        return fetch(api + "/contents/" + R.path + "?ref=" + encodeURIComponent(R.branch) + "&t=" + Date.now(), {headers:headers(), cache:"no-store"})
-          .then(function(res){
-            return res.json().then(function(body){
-              if (res.status === 404) return { list:[], sha:null };
-              if (!res.ok) throw httpError(res, body);
-              var text = body.content ? b64decode(body.content) : "";
-              if (!text && body.download_url){   // 1MB 넘는 파일
-                return fetch(body.download_url + "?t=" + Date.now(), {cache:"no-store"}).then(function(r){ return r.json(); })
-                  .then(function(list){ return { list:list, sha:body.sha }; });
-              }
-              return { list: text ? JSON.parse(text) : [], sha: body.sha };
-            });
-          });
-      }
-      return fetch(R.path + "?t=" + Date.now(), {cache:"no-store"}).then(function(res){
-        if (!res.ok) throw httpError(res);
-        return res.json().then(function(list){ return { list:list, sha:null }; });
-      });
-    }
-    function refresh(){
-      if (pending) return Promise.resolve();
-      return fetchRemote().then(function(r){ if (pending) return; setAll(r.list); sha = r.sha; emit(); return order.length; });
-    }
-
-    // 변경 1건 = 커밋 1건. 다른 사람이 먼저 저장했으면 최신본을 받아 다시 적용
-    function commit(apply, message){
+    function send(op, id, data){
       pending++;
-      apply(map); emit();                                    // 화면에는 바로 반영
-      var run = chain.then(function(){
-        var tries = 0;
-        function attempt(){
-          tries++;
-          return fetchRemote().then(function(r){
-            setAll(r.list); sha = r.sha; apply(map);
-            var body = { message: message, content: b64encode(JSON.stringify(toList(), null, 1) + "\n"), branch: R.branch };
-            if (sha) body.sha = sha;
-            return fetch(api + "/contents/" + R.path, { method:"PUT", headers:headers(), body: JSON.stringify(body) })
-              .then(function(res){
-                return res.json().then(function(out){
-                  if (res.ok){ sha = out.content && out.content.sha; return; }
-                  if ((res.status === 409 || res.status === 422) && tries < 4) return new Promise(function(ok){ setTimeout(ok, 400*tries); }).then(attempt);
-                  throw httpError(res, out);
-                });
-              });
-          });
-        }
-        return attempt();
-      });
-      chain = run.catch(function(){});
-      return run.then(function(){ pending--; emit(); }, function(e){ pending--; refresh().catch(function(){}); throw e; });
+      return fetch(url, { method:"POST", redirect:"follow", headers:{"Content-Type":"text/plain;charset=utf-8"},
+                          body: JSON.stringify({op:op, id:id, data:data||{}}) })
+        .then(function(res){ if (!res.ok) throw new Error("HTTP " + res.status); return res.json(); })
+        .then(function(body){ if (!body.ok) throw new Error(body.error || "저장 실패"); })
+        .then(function(){ pending--; lastOk = new Date(); return fetchAll().catch(function(){}); },
+              function(e){ pending--; fetchAll().catch(function(){}); throw e; });
     }
-    function label(b){ return (b && (b.company + " · " + b.title)) || ""; }
-
-    var store = {
-      repo: R,
-      canEdit: function(){ return !!getToken(); },
+    return {
+      lastOk: function(){ return lastOk; },
       start: function(onData){
         listener = onData;
-        document.addEventListener("visibilitychange", function(){ if (!document.hidden) refresh().catch(function(){}); });
-        setInterval(function(){ if (!document.hidden) refresh().catch(function(){}); }, POLL_MS);
-        return refresh();
+        document.addEventListener("visibilitychange", function(){ if (!document.hidden) fetchAll().catch(function(){}); });
+        setInterval(function(){ if (!document.hidden && !pending) fetchAll().catch(function(){}); }, POLL_MS);
+        return fetchAll();
       },
-      save: function(id, body){
-        var isNew = !map[id];
-        return commit(function(m){ m[id] = Object.assign({}, body); }, (isNew ? "일정 추가: " : "일정 수정: ") + label(body));
-      },
-      patch: function(id, fields){
-        var b = map[id];
-        return commit(function(m){ if (m[id]) Object.assign(m[id], fields); }, "상태 변경: " + label(b) + " → " + (STL[fields.status]||""));
-      },
-      remove: function(id){
-        var b = map[id];
-        return commit(function(m){ delete m[id]; }, "일정 삭제: " + label(b));
-      },
-      reload: function(){ refresh().catch(function(){}); },
-      checkToken: function(t){
-        return fetch(api, { headers: { "Accept":"application/vnd.github+json", "Authorization":"Bearer " + t } })
-          .then(function(res){ return res.json().then(function(b){
-            if (res.status === 401) throw new Error("키가 올바르지 않거나 만료되었습니다.");
-            if (res.status === 404) throw new Error("이 키로는 " + R.owner + "/" + R.repo + " 저장소가 보이지 않습니다. 키를 만들 때 이 저장소를 선택했는지 확인하세요.");
-            if (!res.ok) throw httpError(res, b);
-            if (b.permissions && !b.permissions.push) throw new Error("읽기 권한만 있는 키입니다. Contents 권한을 Read and write 로 만들어 주세요.");
-            return true;
-          }); });
-      }
+      save: function(id, body){ map[id] = Object.assign({id:id}, body); emit(); return send("save", id, body); },
+      patch: function(id, fields){ if (map[id]) Object.assign(map[id], fields); emit(); return send("patch", id, fields); },
+      remove: function(id){ delete map[id]; emit(); return send("remove", id); },
+      reload: function(){ fetchAll().catch(function(){}); }
     };
-    return store;
   }
 
-  // ---- 편집 키 입력 창
-  function openKeyDialog(){
-    var d = $("keyDlg");
-    $("kRepo").textContent = S.store && S.store.repo.owner ? (S.store.repo.owner + "/" + S.store.repo.repo) : "(config.js 에 저장소를 적어 주세요)";
-    $("kToken").value = ""; $("kErr").textContent = "";
-    $("kForget").hidden = !getToken();
-    d.showModal(); setTimeout(function(){ $("kToken").focus(); }, 0);
-  }
-  $("kCancel").onclick = function(){ $("keyDlg").close(); };
-  $("kForget").onclick = function(){ setToken(""); $("keyDlg").close(); updateSync(); S.store.reload(); };
-  $("keyForm").addEventListener("submit", function(ev){
-    ev.preventDefault();
-    var t = $("kToken").value.trim();
-    if (!t){ $("kErr").textContent = "키를 붙여 넣어 주세요."; return; }
-    $("kSave").disabled = true; $("kErr").textContent = "확인 중…";
-    S.store.checkToken(t).then(function(){
-      setToken(t); $("kSave").disabled = false; $("keyDlg").close(); updateSync(); S.store.reload();
-      showBanner("편집 키를 저장했습니다. 이제 이 브라우저에서 일정을 추가·수정할 수 있습니다.", true);
-    }).catch(function(e){ $("kSave").disabled = false; $("kErr").textContent = e.message || "확인하지 못했습니다."; });
-  });
-  $("keyBtn").onclick = openKeyDialog;
-
-  // ---- 시작: 먼저 빈 달력을 그리고, 파일을 읽어 채운다
+  // ---- 시작: 먼저 빈 달력을 그리고, 시트를 읽어 채운다
   render();
+  function pad2(n){ return (n<10?"0":"")+n; }
   function onData(list){ S.events = list; S.ready = true; fillCompanies(); render(); updateSync(); }
   function updateSync(){
     if (!S.store) return;
-    var edit = S.store.canEdit();
-    setSync((edit ? "GitHub 저장소와 동기화 · " : "보기 전용 · ") + S.events.length + "건", edit);
-    $("keyBtn").textContent = edit ? "편집 키 변경" : "편집 키 입력";
+    var t = S.store.lastOk();
+    setSync("팀원과 공유 중 · " + S.events.length + "건" + (t ? " · " + pad2(t.getHours()) + ":" + pad2(t.getMinutes()) + " 동기화" : ""), true);
   }
-  S.store = GitHubStore();
-  var baseOpenForm = openForm;
-  openForm = function(e){
-    if (!S.store.canEdit()){ openKeyDialog(); return; }
-    baseOpenForm(e);
-  };
-  var baseToggle = toggleStatus;
-  toggleStatus = function(id){
-    if (!S.store.canEdit()){ openKeyDialog(); return; }
-    baseToggle(id);
-  };
+
+  if (!CFG.apiUrl){
+    setSync("저장 서버 주소(config.js)가 비어 있어 보기만 가능합니다"); $("add").disabled = true;
+    fetch("data/events.json", {cache:"no-store"}).then(function(r){ return r.json(); }).then(function(list){ S.events = list.map(norm); fillCompanies(); render(); });
+    return;
+  }
+  S.store = SheetStore(CFG.apiUrl);
   S.store.start(onData).then(updateSync).catch(function(e){
-    setSync("일정 파일을 불러오지 못했습니다 — " + (e.status===401 ? "편집 키가 만료되었습니다. 새 키를 입력하세요." : "새로고침해 주세요"));
-    if (e.status === 401){ setToken(""); }
+    setSync("일정을 불러오지 못했습니다 — 잠시 뒤 새로고침해 주세요");
     if (window.console) console.error(e);
   });
 })();

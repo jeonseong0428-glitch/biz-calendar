@@ -1,11 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-//  사업팀 달력 설정
-//  https://<아이디>.github.io/<저장소>/ 로 배포하면 아래를 비워 둬도 자동으로 찾습니다.
-//  다른 주소(개인 도메인 등)로 배포하거나, 일정 파일을 다른 저장소에 둘 때만 채우세요.
-// ─────────────────────────────────────────────────────────────
+// 사업팀 달력 설정 — 일정은 구글 시트 「사업팀 달력 데이터」에 저장됩니다.
 window.BIZCAL_CONFIG = {
-  owner: "",                   // GitHub 아이디 (예: "jeonseong0428-glitch")
-  repo: "",                    // 저장소 이름 (예: "biz-calendar")
-  branch: "main",
-  dataPath: "data/events.json"
+  apiUrl: "https://script.google.com/macros/s/AKfycbx7ke4yIcybzpRaP6UypRjxHhw3Bix_w2O71goL1XA7GkRv6l-Ml_0y3jCzIJw2KDa3/exec"
 };

@@ -220,7 +220,6 @@ dialog::backdrop{background:rgba(15,20,18,.38)}
   <main id="view"></main>
   <div class="foot">
     <p class="sync" id="sync"><i></i><span>불러오는 중…</span></p>
-    <button class="linkbtn" id="keyBtn" type="button">편집 키 입력</button>
   </div>
 </div>
 
@@ -248,28 +247,6 @@ dialog::backdrop{background:rgba(15,20,18,.38)}
       <div class="sp"></div>
       <button type="button" class="btn" id="fCancel">취소</button>
       <button type="submit" class="btn primary" id="fSave">저장</button>
-    </div>
-  </form>
-</dialog>
-
-<dialog id="keyDlg" aria-labelledby="keyTitle">
-  <form class="form" id="keyForm" method="dialog">
-    <h3 id="keyTitle">편집 키 입력</h3>
-    <p class="keyhelp">일정을 추가·수정하면 GitHub 저장소 <code id="kRepo"></code> 에 바로 저장됩니다. 저장하려면 이 저장소에 쓸 수 있는 키가 한 번 필요합니다. 키는 이 브라우저에만 보관됩니다.</p>
-    <div class="f"><label for="kToken">GitHub 키 (github_pat_로 시작)</label><input type="password" id="kToken" autocomplete="off" spellcheck="false" placeholder="github_pat_..."></div>
-    <div class="keyhelp">키가 없다면
-      <ol>
-        <li>GitHub → Settings → Developer settings → Fine-grained tokens → <b>Generate new token</b></li>
-        <li>Repository access: <b>Only select repositories</b> → 이 달력 저장소</li>
-        <li>Permissions → Repository → <b>Contents: Read and write</b> → Generate</li>
-      </ol>
-    </div>
-    <p class="err" id="kErr"></p>
-    <div class="actions">
-      <button type="button" class="btn danger" id="kForget" hidden>이 브라우저에서 키 지우기</button>
-      <div class="sp"></div>
-      <button type="button" class="btn" id="kCancel">취소</button>
-      <button type="submit" class="btn primary" id="kSave">저장</button>
     </div>
   </form>
 </dialog>
