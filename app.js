@@ -6,12 +6,12 @@
   var NEXT = {todo:"doing", doing:"done", done:"todo"};
 
   // ---- 상태
-  var S = { view:"month", cursor: ymd(new Date()), company:"", hideDone:false, events:[], ready:false, store:null, editing:null };
+  var S = { view:"month", cursor: ymd(new Date()), company:"", stage:"", hideDone:false, events:[], ready:false, store:null, editing:null };
   try {
     var saved = JSON.parse(localStorage.getItem("bizcal.prefs")||"null");
-    if (saved){ if (/^(month|week|day)$/.test(saved.view)) S.view = saved.view; S.company = saved.company||""; S.hideDone = !!saved.hideDone; }
+    if (saved){ if (/^(month|week|day)$/.test(saved.view)) S.view = saved.view; S.company = saved.company||""; S.stage = saved.stage||""; S.hideDone = !!saved.hideDone; }
   } catch(e){}
-  function savePrefs(){ try{ localStorage.setItem("bizcal.prefs", JSON.stringify({view:S.view, company:S.company, hideDone:S.hideDone})); }catch(e){} }
+  function savePrefs(){ try{ localStorage.setItem("bizcal.prefs", JSON.stringify({view:S.view, company:S.company, stage:S.stage, hideDone:S.hideDone})); }catch(e){} }
 
   // ---- 날짜 도구
   function pad(n){ return (n<10?"0":"")+n; }
@@ -27,9 +27,39 @@
   function hue(name){ var h=0; for (var i=0;i<name.length;i++) h=(h*31+name.charCodeAt(i))>>>0; return [210,150,28,340,262,188,96,8,300,50,232,124][h%12]; }
 
   // ---- 보기용 데이터
+  // ---- 사업 단계
+  var STAGES = [
+    {k:"1", n:"사업신청", h:212}, {k:"2", n:"선정평가", h:262}, {k:"3", n:"사업협약", h:188},
+    {k:"4", n:"착수보고", h:150}, {k:"5", n:"사업수행", h:100}, {k:"6", n:"사업비집행", h:42},
+    {k:"7", n:"중간점검", h:22},  {k:"8", n:"완료점검", h:330}, {k:"9", n:"정산·감리", h:0},
+    {k:"0", n:"기타", h:-1}
+  ];
+  var STAGE = {}; STAGES.forEach(function(x){ STAGE[x.k]=x; });
+  var STAGE_WORDS = [
+    ["9", ["감리","정산","회계","원가","하자보증"]],
+    ["8", ["완료점검","완료보고","최종점검","최종완료","사업완료","최종 완료"]],
+    ["7", ["중간점검","중간보고"]],
+    ["6", ["집행","입금","부담금","지원금","임치","세금계산서","선금","잔금"]],
+    ["4", ["착수"]],
+    ["3", ["협약"]],
+    ["2", ["평가","발표자료","실사","선정"]],
+    ["1", ["사업신청","사업계획서","신청서"]],
+    ["5", ["센서","H/W","HW","네트워크","와이파이","K-HACCP","케이해썹","설치","입고","DATA","데이터","교육","수행","설비","인력","세팅","셋팅","사업기간","일지","발주","공사"]]
+  ];
+  function guessStage(title){
+    var t = String(title||""), best = "0", pos = 1e9;
+    if (t.indexOf("감리")>=0 && t.indexOf("감리 전")<0) return "9";
+    STAGE_WORDS.forEach(function(r){ r[1].forEach(function(w){ var i = t.indexOf(w); if (i>=0 && i<pos){ pos=i; best=r[0]; } }); });
+    return best;
+  }
+  function stageOf(e){ return STAGE[e.stage] ? e.stage : guessStage(e.title); }
+  function stageStyle(k){ var h = STAGE[k].h; return h<0 ? ' data-g="1"' : ' style="--sh:'+h+'"'; }
+  function badge(e){ var k = stageOf(e); return '<b class="sb"'+stageStyle(k)+' title="'+STAGE[k].n+'">'+(k==="0"?"·":k)+'</b>'; }
+
   function visible(){
     return S.events.filter(function(e){
       if (S.company && e.company !== S.company) return false;
+      if (S.stage && stageOf(e) !== S.stage) return false;
       if (S.hideDone && e.status === "done") return false;
       return true;
     });
@@ -59,21 +89,31 @@
     if (S.view==="month") renderMonth(); else if (S.view==="week") renderWeek(); else renderDay();
   }
 
+  function sortMonth(a,b){ var o={doing:0,todo:1,done:2}; return o[a.status]-o[b.status] || (b.urgent?1:0)-(a.urgent?1:0) || stageOf(a).localeCompare(stageOf(b)) || a.company.localeCompare(b.company,"ko"); }
+  function legendHTML(){
+    return '<div class="legend" role="group" aria-label="사업 단계로 거르기">'+STAGES.map(function(x){
+      return '<button type="button" class="lg'+(S.stage===x.k?' on':'')+'" data-stage="'+x.k+'" aria-pressed="'+(S.stage===x.k)+'"><b class="sb"'+stageStyle(x.k)+'>'+(x.k==="0"?"·":x.k)+'</b>'+x.n+'</button>';
+    }).join("")+(S.stage?'<button type="button" class="lg clr" data-stage="">전체 보기</button>':'')+'</div>';
+  }
   function renderMonth(){
     var c = parse(S.cursor), y=c.getFullYear(), m=c.getMonth();
     $("period").innerHTML = (m+1)+"월<small>"+y+"</small>";
     var first = ymd(new Date(y,m,1)), start = mondayOf(first);
     var last = new Date(y,m+1,0), end = addDays(mondayOf(ymd(last)),6);
     var map = byDate(visible()), t = todayStr();
-    var h = '<section class="month" aria-label="월간 달력"><div class="dow">'+DOW.map(function(d){return "<div>"+d+"</div>";}).join("")+'</div><div class="grid">';
+    var h = legendHTML()+'<section class="month" aria-label="월간 달력"><div class="dow">'+DOW.map(function(d){return "<div>"+d+"</div>";}).join("")+'</div><div class="grid">';
     for (var d=start; d<=end; d=addDays(d,1)){
       var inM = parse(d).getMonth()===m, wd = dowIdx(d)>=5;
-      var groups = groupCompany(map[d]||[]);
+      var list = (map[d]||[]).slice().sort(sortMonth);
       var max = window.innerWidth<640 ? 3 : 4;
-      h += '<div class="cell'+(inM?'':' out')+(wd?' weekend':'')+(d===t?' today':'')+'" data-day="'+d+'" role="button" tabindex="0" aria-label="'+md(d)+' 일정 '+(map[d]||[]).length+'건">'+
+      h += '<div class="cell'+(inM?'':' out')+(wd?' weekend':'')+(d===t?' today':'')+'" data-day="'+d+'" role="button" tabindex="0" aria-label="'+md(d)+' 일정 '+list.length+'건">'+
         '<div class="dn"><b>'+(+d.slice(8))+'</b></div>'+
-        groups.slice(0,max).map(function(g){ return chipHTML(g); }).join("")+
-        (groups.length>max?'<span class="more">+'+(groups.length-max)+'곳</span>':'')+'</div>';
+        list.slice(0,max).map(function(e){
+          var k = stageOf(e);
+          return '<span class="ev'+(e.status==="done"?' done':'')+(isLate(e)?' late':'')+(e.urgent&&e.status!=="done"?' urgent':'')+'"'+stageStyle(k)+' title="'+esc(STAGE[k].n+" · "+e.company+" · "+e.title)+'">'+
+            '<b class="sb">'+(k==="0"?"·":k)+'</b><span class="co">'+esc(e.company)+'</span><span class="ti">'+esc(e.title)+'</span></span>';
+        }).join("")+
+        (list.length>max?'<span class="more">+'+(list.length-max)+'건</span>':'')+'</div>';
     }
     $("view").innerHTML = h+'</div></section>';
   }
@@ -89,7 +129,7 @@
         '<button type="button" class="dayh" data-day="'+d+'"><span class="d">'+(+d.slice(8))+'</span><span class="w">'+DOW[i]+'</span><span class="n">'+(list.length?list.length+'건':'')+'</span></button>'+
         '<div class="daybody">'+(groups.length? groups.map(function(g){
           return '<div class="grp">'+chipHTML(g,'data-day="'+d+'"')+g.items.map(function(ev){
-            return '<button type="button" class="it'+(ev.status==="done"?' done':'')+(isLate(ev)?' late':'')+(ev.urgent?' urgent':'')+'" data-id="'+esc(ev.id)+'">'+esc(ev.title)+'</button>';
+            return '<button type="button" class="it'+(ev.status==="done"?' done':'')+(isLate(ev)?' late':'')+(ev.urgent?' urgent':'')+'" data-id="'+esc(ev.id)+'">'+badge(ev)+esc(ev.title)+'</button>';
           }).join("")+'</div>';
         }).join("") : '<span class="empty">일정 없음</span>')+'</div></div>';
     }
@@ -99,7 +139,7 @@
   function rowHTML(ev, showDate){
     return '<div class="row'+(ev.status==="done"?' done':'')+(isLate(ev)?' late':'')+'">'+
       '<button type="button" class="st" data-toggle="'+esc(ev.id)+'" data-s="'+ev.status+'" title="눌러서 상태 바꾸기">'+STL[ev.status]+'</button>'+
-      '<div class="rt"><div class="t">'+(ev.urgent&&ev.status!=="done"?'<span class="tag u">긴급</span>':'')+(showDate?'<span class="tag p">'+md(ev.date)+'</span>':'')+esc(ev.title)+'</div>'+
+      '<div class="rt"><div class="t">'+badge(ev)+(ev.urgent&&ev.status!=="done"?'<span class="tag u">긴급</span>':'')+(showDate?'<span class="tag p">'+md(ev.date)+'</span>':'')+esc(ev.title)+'</div>'+
       ((ev.start||ev.note)?'<div class="m">'+(ev.start?'기간 '+md(ev.start)+' – '+md(ev.date)+(ev.note?' · ':''):'')+esc(ev.note||"")+'</div>':'')+'</div>'+
       '<button type="button" class="edit" data-id="'+esc(ev.id)+'">수정</button></div>';
   }
@@ -158,6 +198,7 @@
 
   $("view").addEventListener("click", function(ev){
     var t = ev.target;
+    var lg = t.closest("[data-stage]"); if (lg){ var k = lg.getAttribute("data-stage"); S.stage = (S.stage===k? "" : k); savePrefs(); render(); return; }
     var tg = t.closest("[data-toggle]"); if (tg){ toggleStatus(tg.getAttribute("data-toggle")); return; }
     var it = t.closest("[data-id]"); if (it){ openForm(find(it.getAttribute("data-id"))); return; }
     var dy = t.closest("[data-day]"); if (dy){ openDay(dy.getAttribute("data-day")); }
@@ -208,6 +249,8 @@
     $("fCompany").value = e ? e.company : (S.company||"");
     $("fTitle").value = e ? e.title : "";
     $("fNote").value = e ? (e.note||"") : "";
+    $("fStage").value = e && STAGE[e.stage] ? e.stage : "";
+    stageHint();
     $("fUrgent").checked = !!(e && e.urgent);
     var st = e ? e.status : "todo";
     document.querySelectorAll('input[name="fStatus"]').forEach(function(r){ r.checked = r.value===st; });
@@ -216,6 +259,8 @@
     setTimeout(function(){ (e ? $("fTitle") : ($("fCompany").value ? $("fTitle") : $("fCompany"))).focus(); }, 0);
   }
   $("fCancel").onclick = function(){ $("dlg").close(); };
+  function stageHint(){ var g = STAGE[guessStage($("fTitle").value)]; $("fStageAuto").textContent = "자동 (제목 보고 판단: "+g.n+")"; }
+  $("fTitle").addEventListener("input", stageHint);
   $("form").addEventListener("submit", function(ev){
     ev.preventDefault();
     var date = $("fDate").value, start = $("fStart").value, company = $("fCompany").value.trim(), title = $("fTitle").value.trim();
@@ -226,7 +271,7 @@
     var old = S.editing ? find(S.editing) : null;
     var body = {
       title:title, company:company, date:date, status:(document.querySelector('input[name="fStatus"]:checked')||{}).value||"todo",
-      urgent:$("fUrgent").checked, note:$("fNote").value.trim(), updatedAt:new Date().toISOString(),
+      urgent:$("fUrgent").checked, note:$("fNote").value.trim(), stage:$("fStage").value, updatedAt:new Date().toISOString(),
       source: old && old.source ? old.source : "manual"
     };
     if (start && start !== date) body.start = start;
@@ -259,7 +304,7 @@
     return {
       id:String(o.id), title:String(o.title||""), company:String(o.company||"공통"), date:String(o.date||""), start:o.start?String(o.start):"",
       status: STL[o.status]?o.status:"todo", urgent:o.urgent===true||String(o.urgent).toUpperCase()==="TRUE", note:String(o.note||""),
-      source:o.source||"", notionId:o.notionId||"", updatedAt:o.updatedAt||""
+      source:o.source||"", notionId:o.notionId||"", stage:STAGE[String(o.stage||"")]?String(o.stage):"", updatedAt:o.updatedAt||""
     };
   }
 

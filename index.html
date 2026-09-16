@@ -192,6 +192,34 @@ dialog::backdrop{background:rgba(15,20,18,.38)}
 .keyhelp{margin:0;font-size:12.5px;color:var(--muted);line-height:1.6}
 .keyhelp ol{margin:4px 0 0;padding-left:18px}
 .keyhelp code{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:12px;background:var(--sunk);padding:1px 5px;border-radius:4px;color:var(--ink2)}
+
+/* 사업 단계 */
+.sb{--sh:210;display:inline-grid;place-items:center;flex:none;min-width:15px;height:15px;padding:0 3px;border-radius:4px;font:600 10px/1 var(--mono);
+  background:hsl(var(--sh) 62% 44%);color:#fff;margin-right:5px;vertical-align:1px}
+[data-g] .sb,.sb[data-g]{background:var(--done)}
+.legend{display:flex;flex-wrap:wrap;gap:4px 6px;margin-top:12px}
+.lg{display:inline-flex;align-items:center;border:1px solid var(--line);background:var(--surface);border-radius:14px;padding:3px 10px 3px 5px;font-size:12.5px;color:var(--ink2);cursor:pointer}
+.lg .sb{margin-right:5px}
+.lg:hover{border-color:var(--line2)}
+.lg.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink);font-weight:600}
+.lg.clr{padding:3px 10px;color:var(--accent)}
+.ev{--sh:210;display:flex;align-items:center;min-width:0;padding:1px 5px 1px 3px;border-radius:5px;font-size:12px;line-height:18px;
+  background:hsl(var(--sh) 55% var(--chip-l));color:var(--ink)}
+.ev[data-g]{background:var(--sunk)}
+.ev .co{font-weight:600;flex:none;max-width:48%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:4px}
+.ev .ti{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink2)}
+.ev.done{background:transparent;box-shadow:inset 0 0 0 1px var(--line)}
+.ev.done .co,.ev.done .ti{color:var(--done);text-decoration:line-through}
+.ev.done .sb{opacity:.5}
+.ev.late{box-shadow:inset 2px 0 0 var(--crit)}
+.ev.urgent .ti{color:var(--crit);font-weight:600}
+.it .sb,.row .sb{font-size:9.5px;min-width:14px;height:14px}
+@media (max-width:640px){
+  .ev{font-size:10.5px;padding:0 2px;line-height:16px}
+  .ev .co{display:none}
+  .ev .sb{min-width:12px;height:12px;font-size:9px;margin-right:3px}
+  .lg{font-size:11.5px;padding:2px 8px 2px 4px}
+}
 </style>
 </head>
 <body>
@@ -231,7 +259,13 @@ dialog::backdrop{background:rgba(15,20,18,.38)}
       <div class="f"><label for="fStart">시작일 <span>(기간 일정만)</span></label><input type="date" id="fStart"></div>
     </div>
     <div class="f"><label for="fCompany">업체</label><input type="text" id="fCompany" list="companyList" autocomplete="off" placeholder="예: 코삿"><datalist id="companyList"></datalist></div>
-    <div class="f"><label for="fTitle">할 일</label><input type="text" id="fTitle" autocomplete="off" placeholder="예: 중간점검 자료 제출"></div>
+    <div class="f"><label for="fTitle">할 일</label><input type="text" id="fTitle" autocomplete="off" placeholder="예: 착수계 제출"></div>
+    <div class="f"><label for="fStage">사업 단계</label><select class="sel" id="fStage">
+      <option value="" id="fStageAuto">자동 (제목 보고 판단)</option>
+      <option value="1">1 사업신청</option><option value="2">2 선정평가</option><option value="3">3 사업협약</option>
+      <option value="4">4 착수보고</option><option value="5">5 사업수행</option><option value="6">6 사업비집행</option>
+      <option value="7">7 중간점검</option><option value="8">8 완료점검</option><option value="9">9 사업비 정산·감리</option>
+      <option value="0">기타</option></select></div>
     <div class="f"><span class="lb">상태</span>
       <div class="radios">
         <label><input type="radio" name="fStatus" id="fS1" value="todo" checked> 예정</label>
