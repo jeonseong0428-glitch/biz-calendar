@@ -5,13 +5,30 @@
   var STL = {todo:"예정", doing:"진행 중", done:"완료"};
   var NEXT = {todo:"doing", doing:"done", done:"todo"};
 
+  // ---- 사업 구분 (업체 단위) — 2026년 사업 / 이전 사업 / 확인 필요. 「공통」은 늘 보임
+  var YEARS = [{k:"2026", n:"2026년 사업"}, {k:"이전", n:"이전 사업"}, {k:"확인", n:"확인 필요"}];
+  var YEAR_KEYS = {"2026":1, "이전":1, "확인":1};
+  var YEAR_LABEL = {"2026":"2026년 사업", "이전":"이전 사업", "확인":"확인 필요"};
+  var DEFAULT_YEAR = {
+    "다소니푸드":"2026", "엠에스푸드":"2026", "원스팜":"2026", "제이엠미트":"2026",
+    "아침엔글로벌":"2026", "아침앤글로벌":"2026", "찬스푸드클럽":"2026", "코삿":"2026",
+    "어니스트밀크":"확인"
+  };
+  function coKey(name){ return String(name||"").replace(/\s+/g,"").replace(/^(주식회사|\(주\)|㈜)|(주식회사|\(주\)|㈜)$/g,""); }
+  function isCommon(name){ return coKey(name)==="공통"; }
+  function yearOfCompany(name){
+    var k = coKey(name);
+    if (S.yearSet[k]) return S.yearSet[k].year;
+    return DEFAULT_YEAR[k] || "이전";
+  }
+
   // ---- 상태
-  var S = { view:"month", cursor: ymd(new Date()), company:"", stage:"", hideDone:false, events:[], ready:false, store:null, editing:null };
+  var S = { view:"month", cursor: ymd(new Date()), company:"", stage:"", year:"", hideDone:false, events:[], yearSet:{}, ready:false, store:null, editing:null };
   try {
     var saved = JSON.parse(localStorage.getItem("bizcal.prefs")||"null");
-    if (saved){ if (/^(month|week|day)$/.test(saved.view)) S.view = saved.view; S.company = saved.company||""; S.stage = saved.stage||""; S.hideDone = !!saved.hideDone; }
+    if (saved){ if (/^(month|week|day)$/.test(saved.view)) S.view = saved.view; S.company = saved.company||""; S.stage = saved.stage||""; S.year = YEAR_KEYS[saved.year] ? saved.year : ""; S.hideDone = !!saved.hideDone; }
   } catch(e){}
-  function savePrefs(){ try{ localStorage.setItem("bizcal.prefs", JSON.stringify({view:S.view, company:S.company, stage:S.stage, hideDone:S.hideDone})); }catch(e){} }
+  function savePrefs(){ try{ localStorage.setItem("bizcal.prefs", JSON.stringify({view:S.view, company:S.company, stage:S.stage, year:S.year, hideDone:S.hideDone})); }catch(e){} }
 
   // ---- 날짜 도구
   function pad(n){ return (n<10?"0":"")+n; }
@@ -59,6 +76,7 @@
   function visible(){
     return S.events.filter(function(e){
       if (S.company && e.company !== S.company) return false;
+      if (S.year && !isCommon(e.company) && yearOfCompany(e.company) !== S.year) return false;
       if (S.stage && stageOf(e) !== S.stage) return false;
       if (S.hideDone && e.status === "done") return false;
       return true;
@@ -86,6 +104,9 @@
   function render(){
     document.querySelectorAll(".seg button").forEach(function(b){ b.setAttribute("aria-pressed", String(b.dataset.view===S.view)); });
     $("company").value = S.company; $("hideDone").checked = S.hideDone;
+    document.querySelectorAll("#yearSeg button").forEach(function(b){ b.setAttribute("aria-pressed", String((b.dataset.year||"")===S.year)); });
+    var unsure = companyNames().filter(function(n){ return !isCommon(n) && yearOfCompany(n)==="확인"; }).length;
+    var ub = document.querySelector('#yearSeg [data-year="확인"]'); ub.hidden = !unsure && S.year!=="확인"; ub.querySelector("span").textContent = unsure;
     if (S.view==="month") renderMonth(); else if (S.view==="week") renderWeek(); else renderDay();
   }
 
@@ -155,7 +176,7 @@
     var vis = visible();
     var list = vis.filter(function(e){ return e.date===d; });
     var span = vis.filter(function(e){ return e.start && e.start<=d && e.date>d && e.status!=="done"; });
-    var lateList = S.events.filter(function(e){ return isLate(e) && (!S.company || e.company===S.company); }).sort(function(a,b){ return a.date<b.date?-1:1; });
+    var lateList = S.events.filter(function(e){ return isLate(e) && (!S.company || e.company===S.company) && (!S.year || isCommon(e.company) || yearOfCompany(e.company)===S.year); }).sort(function(a,b){ return a.date<b.date?-1:1; });
     var undated = vis.filter(function(e){ return !e.date; });
     var h = '<section class="dayview"><div>'+
       '<div class="panel"><h2>'+(d===t?'오늘':md(d))+' 일정 <span class="n">'+list.length+'</span><span class="hint">상태 버튼을 누르면 예정 → 진행 중 → 완료</span></h2>'+
@@ -172,11 +193,21 @@
     $("view").innerHTML = h;
   }
 
-  function fillCompanies(){
+  function companyNames(){
     var set = {}; S.events.forEach(function(e){ if(e.company) set[e.company]=1; });
-    var names = Object.keys(set).sort(function(a,b){ return a.localeCompare(b,"ko"); });
-    $("company").innerHTML = '<option value="">전체 업체</option>'+names.map(function(n){ return '<option value="'+esc(n)+'">'+esc(n)+'</option>'; }).join("");
-    if (S.company && !set[S.company]) S.company = "";
+    return Object.keys(set).sort(function(a,b){ return a.localeCompare(b,"ko"); });
+  }
+  function fillCompanies(){
+    var names = companyNames(), set = {}; names.forEach(function(n){ set[n]=1; });
+    var opt = function(n){ return '<option value="'+esc(n)+'">'+esc(n)+'</option>'; };
+    var common = names.filter(isCommon);
+    $("company").innerHTML = '<option value="">전체 업체</option>'+common.map(opt).join("")+
+      YEARS.map(function(y){
+        if (S.year && S.year !== y.k) return "";
+        var ns = names.filter(function(n){ return !isCommon(n) && yearOfCompany(n)===y.k; });
+        return ns.length ? '<optgroup label="'+y.n+'">'+ns.map(opt).join("")+'</optgroup>' : "";
+      }).join("");
+    if (S.company && (!set[S.company] || (S.year && !isCommon(S.company) && yearOfCompany(S.company)!==S.year))) S.company = "";
     $("companyList").innerHTML = names.map(function(n){ return '<option value="'+esc(n)+'"></option>'; }).join("");
   }
 
@@ -193,6 +224,10 @@
   $("today").onclick = function(){ S.cursor = todayStr(); render(); };
   document.querySelectorAll(".seg button").forEach(function(b){ b.onclick = function(){ S.view=b.dataset.view; savePrefs(); render(); }; });
   $("company").onchange = function(){ S.company=this.value; savePrefs(); render(); };
+  document.querySelectorAll("#yearSeg button").forEach(function(b){ b.onclick = function(){
+    var k = b.dataset.year||""; S.year = k; savePrefs(); fillCompanies(); render();
+  }; });
+  $("yearMgr").onclick = function(){ openYearDialog(); };
   $("hideDone").onchange = function(){ S.hideDone=this.checked; savePrefs(); render(); };
   $("add").onclick = function(){ openForm(null); };
 
@@ -250,6 +285,7 @@
     $("fTitle").value = e ? e.title : "";
     $("fNote").value = e ? (e.note||"") : "";
     $("fStage").value = e && STAGE[e.stage] ? e.stage : "";
+    yearHint();
     stageHint();
     $("fUrgent").checked = !!(e && e.urgent);
     var st = e ? e.status : "todo";
@@ -261,6 +297,52 @@
   $("fCancel").onclick = function(){ $("dlg").close(); };
   function stageHint(){ var g = STAGE[guessStage($("fTitle").value)]; $("fStageAuto").textContent = "자동 (제목 보고 판단: "+g.n+")"; }
   $("fTitle").addEventListener("input", stageHint);
+  // 업체 이름을 적으면 그 업체의 사업 구분을 보여 준다. 처음 보는 업체는 2026년 사업으로 둔다
+  function knownCompany(name){ var k = coKey(name); return !!S.yearSet[k] || !!DEFAULT_YEAR[k] || companyNames().some(function(n){ return coKey(n)===k; }); }
+  function yearHint(){
+    var name = $("fCompany").value.trim();
+    $("fYearRow").hidden = !name || isCommon(name);
+    if (!name || isCommon(name)) return;
+    $("fYear").value = knownCompany(name) ? yearOfCompany(name) : "2026";
+    $("fYearNote").textContent = knownCompany(name) ? "바꾸면 이 업체의 모든 일정에 적용됩니다" : "새 업체 — 저장하면 이 구분으로 등록됩니다";
+  }
+  $("fCompany").addEventListener("input", yearHint);
+  $("fCompany").addEventListener("change", yearHint);
+  function setCompanyYear(name, year){
+    var k = coKey(name); if (!k || isCommon(name) || !YEAR_KEYS[year] || !S.store) return Promise.resolve();
+    if (S.yearSet[k] ? S.yearSet[k].year===year : (DEFAULT_YEAR[k]||"이전")===year && knownCompany(name)) return Promise.resolve();
+    var id = S.yearSet[k] ? S.yearSet[k].id : "cfg-year-" + Array.from(new TextEncoder().encode(k)).map(function(b){ return b.toString(16); }).join("");
+    S.yearSet[k] = {id:id, year:year};
+    fillCompanies(); render();
+    return write(id, function(){ return S.store.save(id, {
+      title:"[설정] 사업 구분", company:name, date:"", status:"todo", urgent:false, note:year, source:"setting", updatedAt:new Date().toISOString()
+    }); });
+  }
+
+  // ---- 사업 구분 관리 창
+  function openYearDialog(){
+    if (!S.store){ showBanner("저장소에 연결되지 않아 지금은 바꿀 수 없습니다. 새로고침해 보세요."); return; }
+    renderYearList(); $("yDlg").showModal();
+  }
+  function renderYearList(){
+    var names = companyNames().filter(function(n){ return !isCommon(n); });
+    var cnt = {}; S.events.forEach(function(e){ cnt[e.company]=(cnt[e.company]||0)+1; });
+    $("yList").innerHTML = YEARS.map(function(y){
+      var ns = names.filter(function(n){ return yearOfCompany(n)===y.k; });
+      return '<div class="ygrp"><h4>'+y.n+' <span>'+ns.length+'곳</span></h4>'+(ns.length? ns.map(function(n){
+        return '<div class="yrow"><span class="dot" style="--h:'+hue(n)+'"></span><span class="yn">'+esc(n)+' <small>'+cnt[n]+'건</small></span>'+
+          '<span class="yseg" role="group" aria-label="'+esc(n)+' 사업 구분">'+YEARS.map(function(o){
+            return '<button type="button" data-co="'+esc(n)+'" data-y="'+o.k+'" aria-pressed="'+(o.k===y.k)+'">'+(o.k==="2026"?"2026년":o.k==="이전"?"이전":"확인 필요")+'</button>';
+          }).join("")+'</span></div>';
+      }).join("") : '<p class="none">없음</p>')+'</div>';
+    }).join("");
+  }
+  $("yList").addEventListener("click", function(ev){
+    var b = ev.target.closest("[data-y]"); if (!b) return;
+    setCompanyYear(b.getAttribute("data-co"), b.getAttribute("data-y")).catch(writeError);
+    renderYearList();
+  });
+  $("yClose").onclick = function(){ $("yDlg").close(); };
   $("form").addEventListener("submit", function(ev){
     ev.preventDefault();
     var date = $("fDate").value, start = $("fStart").value, company = $("fCompany").value.trim(), title = $("fTitle").value.trim();
@@ -278,6 +360,7 @@
     if (old && old.notionId) body.notionId = old.notionId;
     var id = S.editing || newId();
     $("fSave").disabled = true;
+    if (!isCommon(company) && !$("fYearRow").hidden) setCompanyYear(company, $("fYear").value).catch(writeError);
     write(id, function(){ return S.store.save(id, body); }).then(function(){
       $("fSave").disabled = false; $("dlg").close();
       if (!S.editing){ S.cursor = date; }
@@ -348,7 +431,15 @@
   // ---- 시작: 먼저 빈 달력을 그리고, 시트를 읽어 채운다
   render();
   function pad2(n){ return (n<10?"0":"")+n; }
-  function onData(list){ S.events = list; S.ready = true; fillCompanies(); render(); updateSync(); }
+  function onData(list){
+    var ev = [], ys = {};
+    list.forEach(function(o){
+      if (o.source === "setting"){ var k = coKey(o.company); if (k && YEAR_KEYS[o.note]) ys[k] = {id:o.id, year:o.note}; }
+      else ev.push(o);
+    });
+    S.events = ev; S.yearSet = ys; S.ready = true; fillCompanies(); render(); updateSync();
+    if ($("yDlg").open) renderYearList();
+  }
   function updateSync(){
     if (!S.store) return;
     var t = S.store.lastOk();
