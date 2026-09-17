@@ -243,6 +243,20 @@ dialog::backdrop{background:rgba(15,20,18,.38)}
 @keyframes flashToday{0%,40%{box-shadow:inset 0 0 0 3px var(--accent)}100%{box-shadow:inset 0 0 0 0 transparent}}
 .flash{animation:flashToday 1.6s ease-out}
 @media (prefers-reduced-motion:reduce){ .flash{animation:none;box-shadow:inset 0 0 0 3px var(--accent)} }
+/* 업체 고르기 목록 (입력 창 안에서 바로 펼쳐짐) */
+.lbhint{color:var(--muted);font-size:11.5px;margin-left:4px}
+.cobox{position:relative}
+.cobox input{padding-right:36px!important}
+.cotoggle{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:28px;height:28px;border:0;background:none;border-radius:6px;color:var(--muted);display:grid;place-items:center}
+.cotoggle:hover{background:var(--sunk);color:var(--ink)}
+.cotoggle svg{width:16px;height:16px}
+.colist{margin-top:4px;border:1px solid var(--line2);border-radius:8px;background:var(--surface);max-height:240px;overflow:auto;padding:4px}
+.colist .cg{font-size:11.5px;font-weight:600;color:var(--muted);padding:6px 8px 2px;letter-spacing:.02em}
+.colist button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;border:0;background:none;padding:7px 8px;border-radius:6px;font-size:14px;color:var(--ink)}
+.colist button small{margin-left:auto;font:500 11px var(--mono);color:var(--muted)}
+.colist button:hover,.colist button.on{background:var(--accent-soft)}
+.colist .new{color:var(--accent)}
+.colist .none{padding:8px}
 </style>
 </head>
 <body>
@@ -288,7 +302,9 @@ dialog::backdrop{background:rgba(15,20,18,.38)}
       <div class="f"><label for="fDate">날짜 (마감)</label><input type="date" id="fDate"></div>
       <div class="f"><label for="fStart">시작일 <span>(기간 일정만)</span></label><input type="date" id="fStart"></div>
     </div>
-    <div class="f"><label for="fCompany">업체</label><input type="text" id="fCompany" list="companyList" autocomplete="off" placeholder="예: 코삿"><datalist id="companyList"></datalist></div>
+    <div class="f"><label for="fCompany">업체 <span class="lbhint">눌러서 목록에서 고르거나 새 이름을 적으세요</span></label>
+      <div class="cobox"><input type="text" id="fCompany" autocomplete="off" placeholder="예: 코삿" role="combobox" aria-expanded="false" aria-controls="fCoList" aria-autocomplete="list"><button type="button" class="cotoggle" id="fCoToggle" tabindex="-1" aria-label="업체 목록 열기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></button></div>
+      <div class="colist" id="fCoList" role="listbox" aria-label="업체 목록" hidden></div><datalist id="companyList"></datalist></div>
     <div class="f" id="fYearRow" hidden><label for="fYear">이 업체의 사업 구분 <span id="fYearNote"></span></label><select class="sel" id="fYear">
       <option value="2026">2026년 사업</option><option value="이전">이전 사업</option><option value="확인">확인 필요</option></select></div>
     <div class="f"><label for="fTitle">할 일</label><input type="text" id="fTitle" autocomplete="off" placeholder="예: 착수계 제출"></div>

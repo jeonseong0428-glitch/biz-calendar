@@ -295,7 +295,7 @@
     $("fUrgent").checked = !!(e && e.urgent);
     var st = e ? e.status : "todo";
     document.querySelectorAll('input[name="fStatus"]').forEach(function(r){ r.checked = r.value===st; });
-    $("fDel").hidden = !e; $("fErr").textContent = "";
+    $("fDel").hidden = !e; $("fErr").textContent = ""; closeCoList();
     $("dlg").showModal();
     setTimeout(function(){ (e ? $("fTitle") : ($("fCompany").value ? $("fTitle") : $("fCompany"))).focus(); }, 0);
   }
@@ -313,6 +313,54 @@
   }
   $("fCompany").addEventListener("input", yearHint);
   $("fCompany").addEventListener("change", yearHint);
+
+  // ---- 업체 고르기 목록: 브라우저 기본 자동완성 대신 입력 창 아래에 직접 펼친다
+  var coActive = -1;
+  function coOptions(){ return Array.prototype.slice.call($("fCoList").querySelectorAll("button[data-co]")); }
+  function renderCoList(){
+    var raw = $("fCompany").value.trim(), q = coKey(raw).toLowerCase();
+    var cnt = {}; S.events.forEach(function(e){ cnt[e.company]=(cnt[e.company]||0)+1; });
+    var names = companyNames().filter(function(n){ return !q || coKey(n).toLowerCase().indexOf(q) >= 0; });
+    var btn = function(n){ return '<button type="button" role="option" data-co="'+esc(n)+'"><span class="dot" style="--h:'+hue(n)+'"></span>'+esc(n)+'<small>'+(cnt[n]||0)+'건</small></button>'; };
+    var h = "";
+    var common = names.filter(isCommon);
+    if (common.length) h += common.map(btn).join("");
+    YEARS.forEach(function(y){
+      var ns = names.filter(function(n){ return !isCommon(n) && yearOfCompany(n)===y.k; });
+      if (ns.length) h += '<div class="cg">'+y.n+'</div>'+ns.map(btn).join("");
+    });
+    var exact = companyNames().some(function(n){ return coKey(n)===coKey(raw); });
+    if (raw && !exact) h += '<div class="cg">새 업체</div><button type="button" role="option" class="new" data-co="'+esc(raw)+'">「'+esc(raw)+'」 새 업체로 추가</button>';
+    if (!h) h = '<p class="none">업체가 없습니다. 이름을 적어 주세요.</p>';
+    $("fCoList").innerHTML = h;
+    coActive = -1;
+  }
+  function openCoList(){ renderCoList(); $("fCoList").hidden = false; $("fCompany").setAttribute("aria-expanded","true"); }
+  function closeCoList(){ $("fCoList").hidden = true; $("fCompany").setAttribute("aria-expanded","false"); coActive = -1; }
+  function pickCompany(name){
+    $("fCompany").value = name; closeCoList(); yearHint();
+    $("fTitle").focus();
+  }
+  function markActive(){
+    var opts = coOptions();
+    opts.forEach(function(b, i){ b.classList.toggle("on", i===coActive); });
+    if (opts[coActive]) opts[coActive].scrollIntoView({block:"nearest"});
+  }
+  $("fCompany").addEventListener("focus", openCoList);
+  $("fCompany").addEventListener("click", function(){ if ($("fCoList").hidden) openCoList(); });
+  $("fCompany").addEventListener("input", openCoList);
+  $("fCompany").addEventListener("blur", function(){ setTimeout(function(){ if (document.activeElement !== $("fCompany")) closeCoList(); }, 150); });
+  $("fCompany").addEventListener("keydown", function(ev){
+    var opts = coOptions();
+    if (ev.key === "ArrowDown"){ ev.preventDefault(); if ($("fCoList").hidden) openCoList(); opts = coOptions(); coActive = Math.min(opts.length-1, coActive+1); markActive(); }
+    else if (ev.key === "ArrowUp"){ ev.preventDefault(); coActive = Math.max(0, coActive-1); markActive(); }
+    else if (ev.key === "Enter" && !$("fCoList").hidden && opts[coActive]){ ev.preventDefault(); pickCompany(opts[coActive].getAttribute("data-co")); }
+    else if (ev.key === "Escape" && !$("fCoList").hidden){ ev.preventDefault(); ev.stopPropagation(); closeCoList(); }
+  });
+  $("fCoList").addEventListener("mousedown", function(ev){ ev.preventDefault(); });
+  $("fCoList").addEventListener("click", function(ev){ var b = ev.target.closest("[data-co]"); if (b) pickCompany(b.getAttribute("data-co")); });
+  $("fCoToggle").addEventListener("mousedown", function(ev){ ev.preventDefault(); });
+  $("fCoToggle").addEventListener("click", function(){ if ($("fCoList").hidden){ $("fCompany").focus(); openCoList(); } else closeCoList(); });
   function setCompanyYear(name, year){
     var k = coKey(name); if (!k || isCommon(name) || !YEAR_KEYS[year] || !S.store) return Promise.resolve();
     if (S.yearSet[k] ? S.yearSet[k].year===year : (DEFAULT_YEAR[k]||"이전")===year && knownCompany(name)) return Promise.resolve();
