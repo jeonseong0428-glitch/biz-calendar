@@ -221,14 +221,10 @@
 
   $("prev").onclick = function(){ move(-1); };
   $("next").onclick = function(){ move(1); };
-  // 「오늘」: 지금 보는 화면(월간·주간·일간) 그대로 오늘이 있는 달·주·날로 옮기고, 오늘 칸으로 스크롤해 잠깐 반짝이게 한다
+  // 「오늘」: 어느 화면에서 누르든 오늘 하루(일간)만 보여 준다
   function goToday(){
-    S.cursor = todayStr(); render();
-    var el = document.querySelector("#view .cell.today, #view .day.today") || document.querySelector("#view .panel");
-    if (!el) return;
-    var top = el.getBoundingClientRect().top + window.scrollY - document.querySelector(".top").offsetHeight - 12;
-    window.scrollTo({top: Math.max(0, top), behavior: "smooth"});
-    el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
+    S.view = "day"; S.cursor = todayStr(); savePrefs(); render();
+    window.scrollTo({top: 0, behavior: "smooth"});
   }
   $("today").onclick = goToday;
   document.querySelectorAll(".seg button").forEach(function(b){ b.onclick = function(){ S.view=b.dataset.view; savePrefs(); render(); }; });
