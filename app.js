@@ -23,12 +23,12 @@
   }
 
   // ---- 상태
-  var S = { view:"month", cursor: ymd(new Date()), company:"", stage:"", year:"", hideDone:false, events:[], yearSet:{}, ready:false, store:null, editing:null };
+  var S = { view:"month", cursor: ymd(new Date()), company:"", stage:"", year:"", q:"", hideDone:false, dev:true, events:[], devEvents:[], devInfo:null, yearSet:{}, ready:false, store:null, editing:null };
   try {
     var saved = JSON.parse(localStorage.getItem("bizcal.prefs")||"null");
-    if (saved){ if (/^(month|week|day)$/.test(saved.view)) S.view = saved.view; S.company = saved.company||""; S.stage = saved.stage||""; S.year = YEAR_KEYS[saved.year] ? saved.year : ""; S.hideDone = !!saved.hideDone; }
+    if (saved){ if (/^(month|week|day|plan)$/.test(saved.view)) S.view = saved.view; if (saved.dev===false) S.dev = false; S.company = saved.company||""; S.stage = saved.stage||""; S.year = YEAR_KEYS[saved.year] ? saved.year : ""; S.hideDone = !!saved.hideDone; }
   } catch(e){}
-  function savePrefs(){ try{ localStorage.setItem("bizcal.prefs", JSON.stringify({view:S.view, company:S.company, stage:S.stage, year:S.year, hideDone:S.hideDone})); }catch(e){} }
+  function savePrefs(){ try{ localStorage.setItem("bizcal.prefs", JSON.stringify({view:S.view, company:S.company, stage:S.stage, year:S.year, hideDone:S.hideDone, dev:S.dev})); }catch(e){} }
 
   // ---- 날짜 도구
   function pad(n){ return (n<10?"0":"")+n; }
@@ -73,10 +73,18 @@
   function stageStyle(k){ var h = STAGE[k].h; return h<0 ? ' data-g="1"' : ' style="--sh:'+h+'"'; }
   function badge(e){ var k = stageOf(e); return '<b class="sb"'+stageStyle(k)+' title="'+STAGE[k].n+'">'+(k==="0"?"·":k)+'</b>'; }
 
+  var DEV = "개발팀";
+  function isDev(e){ return e && e.source === "dev"; }
+  function allEvents(){ return S.dev ? S.events.concat(S.devEvents) : S.events; }
+  function hit(e){
+    var q = S.q.trim().toLowerCase(); if (!q) return true;
+    return (e.company+" "+e.title+" "+(e.note||"")).toLowerCase().indexOf(q) >= 0;
+  }
   function visible(){
-    return S.events.filter(function(e){
+    return allEvents().filter(function(e){
+      if (!hit(e)) return false;
       if (S.company && e.company !== S.company) return false;
-      if (S.year && !isCommon(e.company) && yearOfCompany(e.company) !== S.year) return false;
+      if (S.year && !isCommon(e.company) && !isDev(e) && yearOfCompany(e.company) !== S.year) return false;
       if (S.stage && stageOf(e) !== S.stage) return false;
       if (S.hideDone && e.status === "done") return false;
       return true;
@@ -107,7 +115,9 @@
     document.querySelectorAll("#yearSeg button").forEach(function(b){ b.setAttribute("aria-pressed", String((b.dataset.year||"")===S.year)); });
     var unsure = companyNames().filter(function(n){ return !isCommon(n) && yearOfCompany(n)==="확인"; }).length;
     var ub = document.querySelector('#yearSeg [data-year="확인"]'); ub.hidden = !unsure && S.year!=="확인"; ub.querySelector("span").textContent = unsure;
-    if (S.view==="month") renderMonth(); else if (S.view==="week") renderWeek(); else renderDay();
+    $("q").value = S.q;
+    var dv = $("devToggle"); if (dv){ dv.checked = S.dev; dv.parentNode.hidden = !S.devEvents.length; }
+    if (S.view==="month") renderMonth(); else if (S.view==="week") renderWeek(); else if (S.view==="plan") renderPlan(); else renderDay();
   }
 
   function sortMonth(a,b){ var o={doing:0,todo:1,done:2}; return o[a.status]-o[b.status] || (b.urgent?1:0)-(a.urgent?1:0) || stageOf(a).localeCompare(stageOf(b)) || a.company.localeCompare(b.company,"ko"); }
@@ -121,7 +131,11 @@
     $("period").innerHTML = (m+1)+"월<small>"+y+"</small>";
     var first = ymd(new Date(y,m,1)), start = mondayOf(first);
     var last = new Date(y,m+1,0), end = addDays(mondayOf(ymd(last)),6);
-    var map = byDate(visible()), t = todayStr();
+    var vis = visible(), map = byDate(vis), t = todayStr();
+    vis.forEach(function(e){   // 기간 일정은 시작일 칸에도 한 번 더 보여 준다
+      if (!e.start || !e.date || e.start >= e.date) return;
+      (map[e.start] = map[e.start] || []).push(Object.assign({}, e, {_mark:"start"}));
+    });
     var h = legendHTML()+'<section class="month" aria-label="월간 달력"><div class="dow">'+DOW.map(function(d){return "<div>"+d+"</div>";}).join("")+'</div><div class="grid">';
     for (var d=start; d<=end; d=addDays(d,1)){
       var inM = parse(d).getMonth()===m, wd = dowIdx(d)>=5;
@@ -131,8 +145,10 @@
         '<div class="dn"><b>'+(+d.slice(8))+'</b></div>'+
         list.slice(0,max).map(function(e){
           var k = stageOf(e);
-          return '<span class="ev'+(e.status==="done"?' done':'')+(isLate(e)?' late':'')+(e.urgent&&e.status!=="done"?' urgent':'')+'"'+stageStyle(k)+' title="'+esc(STAGE[k].n+" · "+e.company+" · "+e.title)+'">'+
-            '<span class="eh"><b class="sb">'+(k==="0"?"·":k)+'</b><span class="co">'+esc(e.company)+'</span></span><span class="ti">'+esc(e.title)+'</span></span>';
+          var span = e.start && e.date && e.start < e.date;
+          var rg = span ? '<span class="rg">'+md(e.start)+' → '+md(e.date)+'</span>' : '';
+          return '<span class="ev'+(e.status==="done"?' done':'')+(isLate(e)&&e._mark!=="start"?' late':'')+(e.urgent&&e.status!=="done"?' urgent':'')+(e._mark==="start"?' begin':'')+(isDev(e)?' dev':'')+'"'+stageStyle(k)+' title="'+esc(STAGE[k].n+" · "+e.company+" · "+e.title+(span?" ("+md(e.start)+"~"+md(e.date)+")":""))+'">'+
+            '<span class="eh"><b class="sb">'+(e._mark==="start"?"▶":(k==="0"?"·":k))+'</b><span class="co">'+esc(e.company)+'</span></span><span class="ti">'+(e._mark==="start"?'<b class="mk">시작</b> ':'')+esc(e.title)+'</span>'+rg+'</span>';
         }).join("")+
         (list.length>max?'<span class="more">+'+(list.length-max)+'건</span>':'')+'</div>';
     }
@@ -176,7 +192,7 @@
     var vis = visible();
     var list = vis.filter(function(e){ return e.date===d; });
     var span = vis.filter(function(e){ return e.start && e.start<=d && e.date>d && e.status!=="done"; });
-    var lateList = S.events.filter(function(e){ return isLate(e) && (!S.company || e.company===S.company) && (!S.year || isCommon(e.company) || yearOfCompany(e.company)===S.year); }).sort(function(a,b){ return a.date<b.date?-1:1; });
+    var lateList = allEvents().filter(function(e){ return isLate(e) && hit(e) && (!S.company || e.company===S.company) && (!S.year || isCommon(e.company) || isDev(e) || yearOfCompany(e.company)===S.year); }).sort(function(a,b){ return a.date<b.date?-1:1; });
     var undated = vis.filter(function(e){ return !e.date; });
     var h = '<section class="dayview"><div>'+
       '<div class="panel"><h2>'+(d===t?'오늘':md(d))+' 일정 <span class="n">'+list.length+'</span><span class="hint">상태 버튼을 누르면 예정 → 진행 중 → 완료</span></h2>'+
@@ -193,26 +209,75 @@
     $("view").innerHTML = h;
   }
 
+  // =====================================================================
+  //  일정설계 — 업체마다 카드 하나. 시작일·마감일과 남은 날짜를 한눈에
+  // =====================================================================
+  function dday(e){
+    if (!e.date) return "";
+    var t = todayStr();
+    if (e.status === "done") return "완료";
+    if (e.date < t) return "D+" + Math.round((parse(t)-parse(e.date))/864e5) + " 밀림";
+    if (e.date === t) return "오늘";
+    return "D-" + Math.round((parse(e.date)-parse(t))/864e5);
+  }
+  function planCard(g){
+    var items = g.items.slice().sort(function(a,b){
+      return (a.status==="done"?1:0)-(b.status==="done"?1:0) || (a.date||"9999").localeCompare(b.date||"9999") || stageOf(a).localeCompare(stageOf(b));
+    });
+    var open = items.filter(function(e){ return e.status!=="done"; });
+    var doneN = items.length - open.length;
+    var yk = isDev(items[0]) ? "" : (isCommon(g.company) ? "" : yearOfCompany(g.company));
+    var next = open.filter(function(e){ return e.date; })[0];
+    return '<article class="card'+(late(items)?' late':'')+'" style="--h:'+hue(g.company)+'">'+
+      '<header><span class="dot"></span><h3>'+esc(g.company)+'</h3>'+
+        (yk?'<span class="yb">'+YEAR_LABEL[yk]+'</span>':'')+(isDev(items[0])?'<span class="yb dev">개발팀</span>':'')+
+        '<span class="n">'+open.length+'건</span></header>'+
+      (next?'<p class="nx">다음 <b>'+esc(next.title)+'</b> · '+md(next.date)+' <span class="dd">'+dday(next)+'</span></p>':'<p class="nx none">남은 일정 없음</p>')+
+      '<ul class="tl">'+items.slice(0,10).map(function(e){
+        var k = stageOf(e), span = e.start && e.date && e.start < e.date;
+        return '<li class="'+(e.status==="done"?'done ':'')+(isLate(e)?'late ':'')+'" data-id="'+esc(e.id)+'" tabindex="0">'+
+          '<b class="sb"'+stageStyle(k)+' title="'+STAGE[k].n+'">'+(k==="0"?"·":k)+'</b>'+
+          '<span class="t">'+esc(e.title)+'</span>'+
+          '<span class="p">'+(e.date ? (span ? md(e.start)+" → "+md(e.date) : md(e.date)) : "날짜 미정")+'</span>'+
+          '<span class="s s-'+e.status+'">'+(e.status==="done"?"완료":dday(e))+'</span></li>';
+      }).join("")+'</ul>'+
+      (items.length>10?'<p class="more">외 '+(items.length-10)+'건</p>':'')+
+      (doneN?'<p class="dn">완료 '+doneN+'건</p>':'')+'</article>';
+  }
+  function renderPlan(){
+    var vis = visible();
+    var from = S.cursor.slice(0,7);
+    $("period").innerHTML = "일정설계<small>"+S.events.length+"+"+(S.dev?S.devEvents.length:0)+"건</small>";
+    var groups = groupCompany(vis);
+    groups.sort(function(a,b){
+      var ao = a.items.filter(function(e){ return e.status!=="done"; }), bo = b.items.filter(function(e){ return e.status!=="done"; });
+      return late(b.items)-late(a.items) || bo.length-ao.length || a.company.localeCompare(b.company,"ko");
+    });
+    $("view").innerHTML = legendHTML()+'<section class="cards" aria-label="업체별 일정 카드">'+
+      (groups.length ? groups.map(planCard).join("") : '<p class="none">조건에 맞는 일정이 없습니다.</p>')+'</section>';
+  }
+
   function companyNames(){
-    var set = {}; S.events.forEach(function(e){ if(e.company) set[e.company]=1; });
+    var set = {}; allEvents().forEach(function(e){ if(e.company) set[e.company]=1; });
     return Object.keys(set).sort(function(a,b){ return a.localeCompare(b,"ko"); });
   }
   function fillCompanies(){
     var names = companyNames(), set = {}; names.forEach(function(n){ set[n]=1; });
     var opt = function(n){ return '<option value="'+esc(n)+'">'+esc(n)+'</option>'; };
-    var common = names.filter(isCommon);
+    var common = names.filter(function(n){ return isCommon(n) || n === DEV; });
     $("company").innerHTML = '<option value="">전체 업체</option>'+common.map(opt).join("")+
       YEARS.map(function(y){
         if (S.year && S.year !== y.k) return "";
-        var ns = names.filter(function(n){ return !isCommon(n) && yearOfCompany(n)===y.k; });
+        var ns = names.filter(function(n){ return !isCommon(n) && n !== DEV && yearOfCompany(n)===y.k; });
         return ns.length ? '<optgroup label="'+y.n+'">'+ns.map(opt).join("")+'</optgroup>' : "";
       }).join("");
-    if (S.company && (!set[S.company] || (S.year && !isCommon(S.company) && yearOfCompany(S.company)!==S.year))) S.company = "";
+    if (S.company && (!set[S.company] || (S.year && !isCommon(S.company) && S.company !== DEV && yearOfCompany(S.company)!==S.year))) S.company = "";
     $("companyList").innerHTML = names.map(function(n){ return '<option value="'+esc(n)+'"></option>'; }).join("");
   }
 
   // ---- 이동
   function move(dir){
+    if (S.view==="plan") return;
     if (S.view==="month"){ var c=parse(S.cursor); S.cursor = ymd(new Date(c.getFullYear(), c.getMonth()+dir, 1)); }
     else S.cursor = addDays(S.cursor, S.view==="week"?7*dir:dir);
     render();
@@ -234,6 +299,9 @@
   }; });
   $("yearMgr").onclick = function(){ openYearDialog(); };
   $("hideDone").onchange = function(){ S.hideDone=this.checked; savePrefs(); render(); };
+  var qt; $("q").addEventListener("input", function(){ var v=this.value; clearTimeout(qt); qt=setTimeout(function(){ S.q=v; render(); }, 180); });
+  $("q").addEventListener("search", function(){ S.q=this.value; render(); });
+  $("devToggle").onchange = function(){ S.dev=this.checked; savePrefs(); fillCompanies(); render(); };
   $("add").onclick = function(){ openForm(null); };
 
   $("view").addEventListener("click", function(ev){
@@ -257,7 +325,7 @@
   });
   var rt; window.addEventListener("resize", function(){ clearTimeout(rt); rt=setTimeout(function(){ if(S.view==="month") render(); }, 150); });
 
-  function find(id){ return S.events.filter(function(e){ return e.id===id; })[0]||null; }
+  function find(id){ return allEvents().filter(function(e){ return e.id===id; })[0]||null; }
 
   // ---- 쓰기 (문서마다 한 번에 하나씩)
   var queues = {};
@@ -281,6 +349,7 @@
 
   // ---- 입력 창
   function openForm(e){
+    if (isDev(e)){ showBanner("개발팀 일정은 읽기 전용입니다. 개발팀 업무보드에서 바뀝니다."+(e.note?" — "+e.note:"")); return; }
     if (!S.store){ showBanner("저장소에 연결되지 않아 지금은 추가·수정할 수 없습니다. 새로고침해 보세요."); return; }
     S.editing = e ? e.id : null;
     $("dlgTitle").textContent = e ? "일정 수정" : "일정 추가";
@@ -323,10 +392,10 @@
     var names = companyNames().filter(function(n){ return !q || coKey(n).toLowerCase().indexOf(q) >= 0; });
     var btn = function(n){ return '<button type="button" role="option" data-co="'+esc(n)+'"><span class="dot" style="--h:'+hue(n)+'"></span>'+esc(n)+'<small>'+(cnt[n]||0)+'건</small></button>'; };
     var h = "";
-    var common = names.filter(isCommon);
+    var common = names.filter(function(n){ return isCommon(n) || n === DEV; });
     if (common.length) h += common.map(btn).join("");
     YEARS.forEach(function(y){
-      var ns = names.filter(function(n){ return !isCommon(n) && yearOfCompany(n)===y.k; });
+      var ns = names.filter(function(n){ return !isCommon(n) && n !== DEV && yearOfCompany(n)===y.k; });
       if (ns.length) h += '<div class="cg">'+y.n+'</div>'+ns.map(btn).join("");
     });
     var exact = companyNames().some(function(n){ return coKey(n)===coKey(raw); });
@@ -498,6 +567,27 @@
     var t = S.store.lastOk();
     setSync("팀원과 공유 중 · " + S.events.length + "건" + (t ? " · " + pad2(t.getHours()) + ":" + pad2(t.getMinutes()) + " 동기화" : ""), true);
   }
+
+  // ---- 개발팀 일정(사본) 불러오기: data/dev-schedule.json 이 있으면 읽기 전용으로 합친다
+  var DEV_STATUS = {"대기":"todo", "진행중":"doing", "보류":"todo", "완료":"done"};
+  function loadDev(){
+    return fetch("data/dev-schedule.json?t=" + Date.now(), {cache:"no-store"})
+      .then(function(r){ if (!r.ok) throw new Error("no dev file"); return r.json(); })
+      .then(function(body){
+        var list = body["일정"] || [];
+        S.devInfo = { 생성: body["생성"] || "", 건수: list.length, 정본: body["정본"] || "" };
+        S.devEvents = list.map(function(o, i){
+          var due = o["기한"] || o["완료"] || "";
+          var st = DEV_STATUS[o["상태"]] || "todo";
+          var note = [o["담당"] ? "담당 " + o["담당"] : "", o["진행률"] ? o["진행률"] + "%" : "", o["메모"] || ""].filter(Boolean).join(" · ");
+          return { id:"dev-" + (o["번호"] || i), title:String(o["제목"]||""), company:DEV, date:String(due), start:o["시작"] && o["시작"] !== due ? String(o["시작"]) : "",
+                   status:st, urgent:o["우선순위"]==="urgent", note:note, source:"dev", notionId:"", stage:"", updatedAt:body["생성"]||"" };
+        }).filter(function(e){ return e.title && e.date; });
+        fillCompanies(); render();
+      })
+      .catch(function(){ S.devEvents = []; });
+  }
+  loadDev();
 
   if (!CFG.apiUrl){
     setSync("저장 서버 주소(config.js)가 비어 있어 보기만 가능합니다"); $("add").disabled = true;
