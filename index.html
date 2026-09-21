@@ -294,6 +294,19 @@ dialog::backdrop{background:rgba(15,20,18,.38)}
 .card .tl li.done .s{color:var(--done)}
 .card .more,.card .dn{margin:6px 0 0;font-size:11.5px;color:var(--muted)}
 @media (max-width:640px){ .cards{grid-template-columns:minmax(0,1fr)} .srch{width:100%} }
+/* 알람 */
+.btn.bell.on{border-color:var(--accent);color:var(--accent)}
+.alarm{width:min(480px,calc(100vw - 32px))}
+.alarm h3{font-size:19px;margin:0}
+.alarm-k{margin:0;font:600 11px var(--mono);color:var(--accent);letter-spacing:.06em}
+.alarm-k:empty{display:none}
+.alarm-sub{margin:0;font-size:13px;color:var(--ink2)}
+.alarm-list{list-style:none;margin:4px 0 0;padding:0;display:flex;flex-direction:column;gap:6px;max-height:260px;overflow:auto}
+.alarm-list li{display:flex;align-items:baseline;gap:6px;font-size:13.5px;line-height:1.45;overflow-wrap:anywhere}
+.alarm-list li .dot{transform:translateY(1px)}
+.alarm-list li b{font-weight:600;flex:none}
+.alarm-list .lt{font:600 11px var(--mono);color:var(--crit);flex:none}
+.alarm-list .none{color:var(--muted)}
 </style>
 </head>
 <body>
@@ -325,6 +338,7 @@ dialog::backdrop{background:rgba(15,20,18,.38)}
       <select class="sel" id="company" aria-label="업체"><option value="">전체 업체</option></select>
       <label class="check" hidden><input type="checkbox" id="devToggle" checked> 개발팀 일정</label>
       <label class="check"><input type="checkbox" id="hideDone"> 완료 숨기기</label>
+      <button class="btn bell" id="bellBtn" type="button" title="평일 09:00 확인 알림 · 18:00 추가 알림">알림 켜기</button>
       <button class="btn primary" id="add" type="button">+ 일정</button>
     </div>
   </header>
@@ -371,6 +385,16 @@ dialog::backdrop{background:rgba(15,20,18,.38)}
       <button type="submit" class="btn primary" id="fSave">저장</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="alarm" aria-labelledby="alarmTitle" class="alarm">
+  <div class="form">
+    <p class="alarm-k" id="alarmTime"></p>
+    <h3 id="alarmTitle">금일 일정을 확인해주세요</h3>
+    <p class="alarm-sub" id="alarmSub"></p>
+    <ul class="alarm-list" id="alarmList"></ul>
+    <div class="actions"><button type="button" class="btn" id="alarmLater">닫기</button><div class="sp"></div><button type="button" class="btn primary" id="alarmGo">오늘 일정 보기</button></div>
+  </div>
 </dialog>
 
 <dialog id="yDlg" aria-labelledby="yTitle" class="ydlg">

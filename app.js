@@ -481,13 +481,28 @@
     if (start && start !== date) body.start = start;
     if (old && old.notionId) body.notionId = old.notionId;
     var id = S.editing || newId();
-    $("fSave").disabled = true;
+    var isNew = !S.editing;
     if (!isCommon(company) && !$("fYearRow").hidden) setCompanyYear(company, $("fYear").value).catch(writeError);
-    write(id, function(){ return S.store.save(id, body); }).then(function(){
-      $("fSave").disabled = false; $("dlg").close();
-      if (!S.editing){ S.cursor = date; }
-    }).catch(function(e){ $("fSave").disabled = false; writeError(e); $("dlg").close(); });
+    // 화면에는 바로 반영하고 창을 닫는다. 시트 저장은 뒤에서 이어서 한다.
+    var saving = write(id, function(){ return S.store.save(id, body); });
+    $("dlg").close();
+    if (isNew) S.cursor = date;
+    revealEvent(Object.assign({id:id}, body));
+    setSync("저장 중…", true);
+    saving.then(function(){ showBanner("저장했습니다 · 팀원 달력에도 곧 보입니다", true); updateSync(); })
+          .catch(function(e){ writeError(e); updateSync(); });
   });
+  // 새로 넣은 일정이 필터에 가려지면 가리는 필터를 풀어 준다
+  function revealEvent(e){
+    var why = [];
+    if (S.q && !hit(e)){ S.q = ""; if ($("q")) $("q").value = ""; why.push("검색"); }
+    if (S.company && e.company !== S.company){ S.company = ""; why.push("업체"); }
+    if (S.year && !isCommon(e.company) && yearOfCompany(e.company) !== S.year){ S.year = ""; why.push("사업 구분"); }
+    if (S.stage && stageOf(e) !== S.stage){ S.stage = ""; why.push("단계"); }
+    if (S.hideDone && e.status === "done"){ S.hideDone = false; why.push("완료 숨기기"); }
+    savePrefs(); fillCompanies(); render();
+    if (why.length) setTimeout(function(){ showBanner(why.join("·") + " 필터 때문에 안 보여서 필터를 풀었습니다.", true); }, 50);
+  }
   $("fDel").onclick = function(){
     var id = S.editing; if (!id) return;
     var e = find(id);
@@ -502,7 +517,7 @@
   //  저장소 — 구글 시트 (Apps Script 웹 앱). 링크만 있으면 누구나 보기·추가·수정
   // =====================================================================
   var CFG = window.BIZCAL_CONFIG || {};
-  var POLL_MS = 20000;
+  var POLL_MS = 8000;
 
   function newId(){ return "m" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
   function norm(o){
@@ -540,6 +555,8 @@
       start: function(onData){
         listener = onData;
         document.addEventListener("visibilitychange", function(){ if (!document.hidden) fetchAll().catch(function(){}); });
+        window.addEventListener("focus", function(){ if (!pending) fetchAll().catch(function(){}); });
+        window.addEventListener("online", function(){ fetchAll().catch(function(){}); });
         setInterval(function(){ if (!document.hidden && !pending) fetchAll().catch(function(){}); }, POLL_MS);
         return fetchAll();
       },
@@ -562,6 +579,9 @@
     S.events = ev; S.yearSet = ys; S.ready = true; fillCompanies(); render(); updateSync();
     if ($("yDlg").open) renderYearList();
   }
+  $("sync").title = "눌러서 지금 새로고침";
+  $("sync").style.cursor = "pointer";
+  $("sync").addEventListener("click", function(){ if (S.store){ setSync("새로고침 중…", true); S.store.reload(); } });
   function updateSync(){
     if (!S.store) return;
     var t = S.store.lastOk();
@@ -588,6 +608,75 @@
       .catch(function(){ S.devEvents = []; });
   }
   loadDev();
+
+  // =====================================================================
+  //  알람 — 평일 09:00 「금일 일정을 확인해주세요」, 18:00 「익일 일정을 추가해주세요」
+  //  달력을 열어 둔 동안(다른 탭에 있어도) 하루 한 번씩 뜬다
+  // =====================================================================
+  var ALARM_KEY = "bizcal.alarm.";
+  function alarmSeen(k){ try { return localStorage.getItem(ALARM_KEY + todayStr() + "." + k) === "1"; } catch(e){ return false; } }
+  function markAlarm(k){ try { localStorage.setItem(ALARM_KEY + todayStr() + "." + k, "1"); } catch(e){} }
+  function nextWorkday(){ var d = addDays(todayStr(), 1); while (dowIdx(d) >= 5) d = addDays(d, 1); return d; }
+  function ourEvents(){ return S.events.filter(function(e){ return e.status !== "done"; }); }
+  function alarmInfo(k){
+    var t = todayStr();
+    if (k === "am"){
+      var today = ourEvents().filter(function(e){ return e.date === t; });
+      var late = ourEvents().filter(isLate);
+      return { title:"금일 일정을 확인해주세요", sub:md(t)+" ("+DOW[dowIdx(t)]+") · 오늘 마감 "+today.length+"건 · 밀린 일 "+late.length+"건",
+               list: late.concat(today).slice(0,6), go:"오늘 일정 보기", date:t };
+    }
+    var n = nextWorkday(), nx = ourEvents().filter(function(e){ return e.date === n; });
+    return { title:"익일 일정을 추가해주세요", sub:"오늘 한 일을 완료로 바꾸고, "+md(n)+" ("+DOW[dowIdx(n)]+") 일정을 넣어 주세요 · 지금 "+nx.length+"건",
+             list: nx.slice(0,6), go:"+ "+md(n)+" 일정 추가", date:n };
+  }
+  function showAlarm(k){
+    var a = alarmInfo(k), d = $("alarm");
+    $("alarmTitle").textContent = a.title;
+    $("alarmSub").textContent = a.sub;
+    $("alarmList").innerHTML = a.list.length ? a.list.map(function(e){
+      return '<li><span class="dot" style="--h:'+hue(e.company)+'"></span><b>'+esc(e.company)+'</b> '+esc(e.title)+(isLate(e)?' <span class="lt">'+md(e.date)+' 밀림</span>':'')+'</li>';
+    }).join("") : '<li class="none">'+(k==="am"?"오늘 마감인 일정이 없습니다.":"아직 들어간 일정이 없습니다.")+'</li>';
+    $("alarmGo").textContent = a.go;
+    $("alarmGo").onclick = function(){
+      d.close();
+      if (k === "am"){ goToday(); }
+      else { S.cursor = a.date; render(); openForm(null); $("fDate").value = a.date; }
+    };
+    $("alarmLater").onclick = function(){ d.close(); };
+    d.dataset.kind = k;
+    if (!d.open) d.showModal();
+    markAlarm(k);
+    try {
+      if (window.Notification && Notification.permission === "granted" && document.hidden){
+        var no = new Notification("사업팀 달력 — " + a.title, { body: a.sub, tag: "bizcal-" + k });
+        no.onclick = function(){ window.focus(); no.close(); };
+      }
+    } catch(e){}
+  }
+  function checkAlarm(){
+    if (!S.ready || $("dlg").open || $("alarm").open || $("yDlg").open) return;
+    var now = new Date(), wd = (now.getDay() + 6) % 7, hm = now.getHours() * 60 + now.getMinutes();
+    if (wd >= 5) return;                                     // 주말은 쉼
+    if (hm >= 18*60 && !alarmSeen("pm")) showAlarm("pm");
+    else if (hm >= 9*60 && hm < 18*60 && !alarmSeen("am")) showAlarm("am");
+  }
+  setInterval(checkAlarm, 30000);
+  setTimeout(checkAlarm, 4000);
+  function bellLabel(){
+    var b = $("bellBtn"); if (!b) return;
+    var on = window.Notification && Notification.permission === "granted";
+    b.textContent = on ? "알림 켜짐" : "알림 켜기";
+    b.classList.toggle("on", !!on);
+  }
+  $("bellBtn").onclick = function(){
+    if (window.Notification && Notification.permission === "default"){
+      Notification.requestPermission().then(function(){ bellLabel(); showBanner("평일 09:00·18:00에 알림이 뜹니다. 달력 탭을 열어 두세요.", true); });
+    } else {
+      showAlarm(new Date().getHours() >= 18 ? "pm" : "am");
+    }
+  };
+  bellLabel();
 
   if (!CFG.apiUrl){
     setSync("저장 서버 주소(config.js)가 비어 있어 보기만 가능합니다"); $("add").disabled = true;
