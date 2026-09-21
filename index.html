@@ -294,6 +294,10 @@ dialog::backdrop{background:rgba(15,20,18,.38)}
 .card .tl li.done .s{color:var(--done)}
 .card .more,.card .dn{margin:6px 0 0;font-size:11.5px;color:var(--muted)}
 @media (max-width:640px){ .cards{grid-template-columns:minmax(0,1fr)} .srch{width:100%} }
+/* 방금 넣은 일정 표시 */
+.ev.flash{outline:2px solid var(--accent);outline-offset:1px;animation:flashIn .6s ease-out}
+@keyframes flashIn{from{transform:scale(.96);opacity:.4}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){.ev.flash{animation:none}}
 /* 알람 */
 .btn.bell.on{border-color:var(--accent);color:var(--accent)}
 .alarm{width:min(480px,calc(100vw - 32px))}
@@ -406,7 +410,7 @@ dialog::backdrop{background:rgba(15,20,18,.38)}
   </div>
 </dialog>
 
-<script src="config.js"></script>
-<script src="app.js"></script>
+<script src="config.js?v=12"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>

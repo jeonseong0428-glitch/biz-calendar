@@ -120,7 +120,9 @@
     if (S.view==="month") renderMonth(); else if (S.view==="week") renderWeek(); else if (S.view==="plan") renderPlan(); else renderDay();
   }
 
-  function sortMonth(a,b){ var o={doing:0,todo:1,done:2}; return o[a.status]-o[b.status] || (b.urgent?1:0)-(a.urgent?1:0) || stageOf(a).localeCompare(stageOf(b)) || a.company.localeCompare(b.company,"ko"); }
+  function sortMonth(a,b){ var o={doing:0,todo:1,done:2};
+    // 방금 넣은 일정 → 우리 팀 일정 → 개발팀 일정 순서로 (칸이 넘쳐도 우리 것이 먼저 보이게)
+    return (b.id===S.flash?1:0)-(a.id===S.flash?1:0) || (isDev(a)?1:0)-(isDev(b)?1:0) || o[a.status]-o[b.status] || (b.urgent?1:0)-(a.urgent?1:0) || stageOf(a).localeCompare(stageOf(b)) || a.company.localeCompare(b.company,"ko"); }
   function legendHTML(){
     return '<div class="legend" role="group" aria-label="사업 단계로 거르기">'+STAGES.map(function(x){
       return '<button type="button" class="lg'+(S.stage===x.k?' on':'')+'" data-stage="'+x.k+'" aria-pressed="'+(S.stage===x.k)+'"><b class="sb"'+stageStyle(x.k)+'>'+(x.k==="0"?"·":x.k)+'</b>'+x.n+'</button>';
@@ -147,7 +149,7 @@
           var k = stageOf(e);
           var span = e.start && e.date && e.start < e.date;
           var rg = span ? '<span class="rg">'+md(e.start)+' → '+md(e.date)+'</span>' : '';
-          return '<span class="ev'+(e.status==="done"?' done':'')+(isLate(e)&&e._mark!=="start"?' late':'')+(e.urgent&&e.status!=="done"?' urgent':'')+(e._mark==="start"?' begin':'')+(isDev(e)?' dev':'')+'"'+stageStyle(k)+' title="'+esc(STAGE[k].n+" · "+e.company+" · "+e.title+(span?" ("+md(e.start)+"~"+md(e.date)+")":""))+'">'+
+          return '<span class="ev'+(e.status==="done"?' done':'')+(isLate(e)&&e._mark!=="start"?' late':'')+(e.urgent&&e.status!=="done"?' urgent':'')+(e._mark==="start"?' begin':'')+(isDev(e)?' dev':'')+(e.id===S.flash?' flash':'')+'"'+stageStyle(k)+' title="'+esc(STAGE[k].n+" · "+e.company+" · "+e.title+(span?" ("+md(e.start)+"~"+md(e.date)+")":""))+'">'+
             '<span class="eh"><b class="sb">'+(e._mark==="start"?"▶":(k==="0"?"·":k))+'</b><span class="co">'+esc(e.company)+'</span></span><span class="ti">'+(e._mark==="start"?'<b class="mk">시작</b> ':'')+esc(e.title)+'</span>'+rg+'</span>';
         }).join("")+
         (list.length>max?'<span class="more">+'+(list.length-max)+'건</span>':'')+'</div>';
@@ -495,6 +497,7 @@
   // 새로 넣은 일정이 필터에 가려지면 가리는 필터를 풀어 준다
   function revealEvent(e){
     var why = [];
+    S.flash = e.id; clearTimeout(revealEvent.t); revealEvent.t = setTimeout(function(){ S.flash = null; render(); }, 6000);
     if (S.q && !hit(e)){ S.q = ""; if ($("q")) $("q").value = ""; why.push("검색"); }
     if (S.company && e.company !== S.company){ S.company = ""; why.push("업체"); }
     if (S.year && !isCommon(e.company) && yearOfCompany(e.company) !== S.year){ S.year = ""; why.push("사업 구분"); }
@@ -517,7 +520,8 @@
   //  저장소 — 구글 시트 (Apps Script 웹 앱). 링크만 있으면 누구나 보기·추가·수정
   // =====================================================================
   var CFG = window.BIZCAL_CONFIG || {};
-  var POLL_MS = 8000;
+  var POLL_MS = 4000;
+  var CACHE_KEY = "bizcal.cache.v1";
 
   function newId(){ return "m" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
   function norm(o){
@@ -529,20 +533,22 @@
   }
 
   function SheetStore(url){
-    var map = {}, listener = null, pending = 0, lastOk = null;
+    var map = {}, listener = null, pending = 0, lastOk = null, gen = 0;
     function emit(){ listener && listener(Object.keys(map).map(function(k){ return norm(map[k]); })); }
     function fetchAll(){
+      var g = gen;   // 받아 오는 사이에 저장이 있었으면 이 결과는 버린다(방금 넣은 일정이 사라지지 않게)
       return fetch(url + (url.indexOf("?")<0?"?":"&") + "t=" + Date.now(), {cache:"no-store", redirect:"follow"})
         .then(function(res){ if (!res.ok) throw new Error("HTTP " + res.status); return res.json(); })
         .then(function(body){
           if (!body.ok) throw new Error(body.error || "불러오기 실패");
-          if (pending) return;
+          if (pending || g !== gen) return;
           map = {}; body.rows.forEach(function(o){ if (o.id) map[o.id] = o; });
+          try { localStorage.setItem(CACHE_KEY, JSON.stringify(body.rows)); } catch(e){}
           lastOk = new Date(); emit();
         });
     }
     function send(op, id, data){
-      pending++;
+      pending++; gen++;
       return fetch(url, { method:"POST", redirect:"follow", headers:{"Content-Type":"text/plain;charset=utf-8"},
                           body: JSON.stringify({op:op, id:id, data:data||{}}) })
         .then(function(res){ if (!res.ok) throw new Error("HTTP " + res.status); return res.json(); })
@@ -552,8 +558,9 @@
     }
     return {
       lastOk: function(){ return lastOk; },
-      start: function(onData){
+      start: function(onData, cached){
         listener = onData;
+        if (cached && cached.length){ cached.forEach(function(o){ if (o && o.id) map[o.id] = o; }); emit(); setSync("최신 일정 불러오는 중…", true); }
         document.addEventListener("visibilitychange", function(){ if (!document.hidden) fetchAll().catch(function(){}); });
         window.addEventListener("focus", function(){ if (!pending) fetchAll().catch(function(){}); });
         window.addEventListener("online", function(){ fetchAll().catch(function(){}); });
@@ -684,7 +691,10 @@
     return;
   }
   S.store = SheetStore(CFG.apiUrl);
-  S.store.start(onData).then(updateSync).catch(function(e){
+  // 지난번에 받아 둔 목록을 먼저 바로 보여 주고, 최신 목록은 뒤에서 받아 바꾼다
+  var cachedRows = null;
+  try { cachedRows = JSON.parse(localStorage.getItem(CACHE_KEY) || "null"); } catch(e){}
+  S.store.start(onData, cachedRows).then(updateSync).catch(function(e){
     setSync("일정을 불러오지 못했습니다 — 잠시 뒤 새로고침해 주세요");
     if (window.console) console.error(e);
   });
