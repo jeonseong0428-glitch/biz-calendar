@@ -1,7 +1,7 @@
 (function(){
   "use strict";
   var $ = function(id){ return document.getElementById(id); };
-  var DOW = ["월","화","수","목","금","토","일"];
+  var DOW = ["일","월","화","수","목","금","토"];   // 주 시작 = 일요일 (인덱스 = getDay())
   var STL = {todo:"예정", doing:"진행 중", done:"완료"};
   var NEXT = {todo:"doing", doing:"done", done:"todo"};
 
@@ -35,8 +35,9 @@
   function ymd(d){ return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()); }
   function parse(s){ var p=s.split("-"); return new Date(+p[0], +p[1]-1, +p[2]); }
   function addDays(s,n){ var d=parse(s); d.setDate(d.getDate()+n); return ymd(d); }
-  function mondayOf(s){ var d=parse(s); var w=(d.getDay()+6)%7; d.setDate(d.getDate()-w); return ymd(d); }
-  function dowIdx(s){ return (parse(s).getDay()+6)%7; }
+  function weekStartOf(s){ var d=parse(s); d.setDate(d.getDate()-d.getDay()); return ymd(d); }   // 그 주의 일요일
+  function dowIdx(s){ return parse(s).getDay(); }                    // 0=일 … 6=토, DOW 인덱스와 같음
+  function isWeekendDay(s){ var g=parse(s).getDay(); return g===0 || g===6; }   // 칸 위치와 무관하게 토·일
   function md(s){ var p=s.split("-"); return (+p[1])+"/"+(+p[2]); }
   function todayStr(){ return ymd(new Date()); }
 
@@ -131,8 +132,8 @@
   function renderMonth(){
     var c = parse(S.cursor), y=c.getFullYear(), m=c.getMonth();
     $("period").innerHTML = (m+1)+"월<small>"+y+"</small>";
-    var first = ymd(new Date(y,m,1)), start = mondayOf(first);
-    var last = new Date(y,m+1,0), end = addDays(mondayOf(ymd(last)),6);
+    var first = ymd(new Date(y,m,1)), start = weekStartOf(first);
+    var last = new Date(y,m+1,0), end = addDays(weekStartOf(ymd(last)),6);
     var vis = visible(), map = byDate(vis), t = todayStr();
     vis.forEach(function(e){   // 기간 일정은 시작일 칸에도 한 번 더 보여 준다
       if (!e.start || !e.date || e.start >= e.date) return;
@@ -140,7 +141,7 @@
     });
     var h = legendHTML()+'<section class="month" aria-label="월간 달력"><div class="dow">'+DOW.map(function(d){return "<div>"+d+"</div>";}).join("")+'</div><div class="grid">';
     for (var d=start; d<=end; d=addDays(d,1)){
-      var inM = parse(d).getMonth()===m, wd = dowIdx(d)>=5;
+      var inM = parse(d).getMonth()===m, wd = isWeekendDay(d);
       var list = (map[d]||[]).slice().sort(sortMonth);
       var max = window.innerWidth<640 ? 5 : 8;
       h += '<div class="cell'+(inM?'':' out')+(wd?' weekend':'')+(d===t?' today':'')+'" data-day="'+d+'" role="button" tabindex="0" aria-label="'+md(d)+' 일정 '+list.length+'건">'+
@@ -158,13 +159,13 @@
   }
 
   function renderWeek(){
-    var s = mondayOf(S.cursor), e = addDays(s,6), t = todayStr();
+    var s = weekStartOf(S.cursor), e = addDays(s,6), t = todayStr();
     var sy = s.slice(0,4);
     $("period").innerHTML = md(s)+" – "+md(e)+"<small>"+sy+"</small>";
     var map = byDate(visible()), h = '<section class="week" aria-label="주간 달력">';
     for (var i=0;i<7;i++){
       var d = addDays(s,i), list = map[d]||[], groups = groupCompany(list);
-      h += '<div class="day'+(i>=5?' weekend':'')+(d===t?' today':'')+'">'+
+      h += '<div class="day'+((i===0||i===6)?' weekend':'')+(d===t?' today':'')+'">'+
         '<button type="button" class="dayh" data-day="'+d+'"><span class="d">'+(+d.slice(8))+'</span><span class="w">'+DOW[i]+'</span><span class="n">'+(list.length?list.length+'건':'')+'</span></button>'+
         '<div class="daybody">'+(groups.length? groups.map(function(g){
           return '<div class="grp">'+chipHTML(g,'data-day="'+d+'"')+g.items.map(function(ev){
@@ -623,7 +624,7 @@
   var ALARM_KEY = "bizcal.alarm.";
   function alarmSeen(k){ try { return localStorage.getItem(ALARM_KEY + todayStr() + "." + k) === "1"; } catch(e){ return false; } }
   function markAlarm(k){ try { localStorage.setItem(ALARM_KEY + todayStr() + "." + k, "1"); } catch(e){} }
-  function nextWorkday(){ var d = addDays(todayStr(), 1); while (dowIdx(d) >= 5) d = addDays(d, 1); return d; }
+  function nextWorkday(){ var d = addDays(todayStr(), 1); while (isWeekendDay(d)) d = addDays(d, 1); return d; }
   function ourEvents(){ return S.events.filter(function(e){ return e.status !== "done"; }); }
   function alarmInfo(k){
     var t = todayStr();
@@ -663,8 +664,8 @@
   }
   function checkAlarm(){
     if (!S.ready || $("dlg").open || $("alarm").open || $("yDlg").open) return;
-    var now = new Date(), wd = (now.getDay() + 6) % 7, hm = now.getHours() * 60 + now.getMinutes();
-    if (wd >= 5) return;                                     // 주말은 쉼
+    var now = new Date(), g = now.getDay(), hm = now.getHours() * 60 + now.getMinutes();
+    if (g === 0 || g === 6) return;                          // 주말은 쉼
     if (hm >= 18*60 && !alarmSeen("pm")) showAlarm("pm");
     else if (hm >= 9*60 && hm < 18*60 && !alarmSeen("am")) showAlarm("am");
   }
