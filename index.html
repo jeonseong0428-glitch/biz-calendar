@@ -324,9 +324,9 @@ dialog::backdrop{background:rgba(15,20,18,.38)}
       <button class="btn" id="today" type="button">오늘</button>
     </div>
     <div class="seg" role="group" aria-label="보기">
+      <button type="button" data-view="day">일간</button>
       <button type="button" data-view="month">월간</button>
       <button type="button" data-view="week">주간</button>
-      <button type="button" data-view="day">일간</button>
       <button type="button" data-view="plan">일정설계</button>
     </div>
     <div class="sp"></div>
@@ -357,8 +357,8 @@ dialog::backdrop{background:rgba(15,20,18,.38)}
   <form class="form" id="form" method="dialog">
     <h3 id="dlgTitle">일정 추가</h3>
     <div class="two">
-      <div class="f"><label for="fDate">날짜 (마감)</label><input type="date" id="fDate"></div>
       <div class="f"><label for="fStart">시작일 <span>(기간 일정만)</span></label><input type="date" id="fStart"></div>
+      <div class="f"><label for="fDate">날짜 (마감)</label><input type="date" id="fDate"></div>
     </div>
     <div class="f"><label for="fCompany">업체 <span class="lbhint">눌러서 목록에서 고르거나 새 이름을 적으세요</span></label>
       <div class="cobox"><input type="text" id="fCompany" autocomplete="off" placeholder="예: 코삿" role="combobox" aria-expanded="false" aria-controls="fCoList" aria-autocomplete="list"><button type="button" class="cotoggle" id="fCoToggle" tabindex="-1" aria-label="업체 목록 열기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></button></div>
