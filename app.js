@@ -182,7 +182,8 @@
   function isSpan(e){ return !!(e.start && e.date && e.start < e.date); }
   // day 를 주면 기간 일정에 「오늘 시작」「오늘 마감」 표시, extra 는 제목 앞 꼬리표(HTML)
   function rowHTML(ev, showDate, day, extra){
-    var dt = (day && isSpan(ev)) ? (ev.start===day ? '<span class="tag s">'+(day===todayStr()?'오늘 ':'')+'시작</span>' : ev.date===day ? '<span class="tag e">'+(day===todayStr()?'오늘 ':'')+'마감</span>' : '') : '';
+    var dt = (day && isSpan(ev)) ? (ev.start===day ? '<span class="tag s">'+(day===todayStr()?'오늘 ':'')+'시작</span>' : ev.date===day ? '<span class="tag e">'+(day===todayStr()?'오늘 ':'')+'마감</span>' :
+             (ev.start<day && ev.date>day) ? '<span class="tag s">기간 중 · 마감까지 '+Math.round((parse(ev.date)-parse(day))/864e5)+'일</span>' : '') : '';
     return '<div class="row'+(ev.status==="done"?' done':'')+(isLate(ev)?' late':'')+'">'+
       '<button type="button" class="st" data-toggle="'+esc(ev.id)+'" data-s="'+ev.status+'" title="눌러서 상태 바꾸기">'+STL[ev.status]+'</button>'+
       '<div class="rt"><div class="t">'+badge(ev)+(ev.urgent&&ev.status!=="done"?'<span class="tag u">긴급</span>':'')+dt+(extra||'')+(showDate?'<span class="tag p">'+md(ev.date)+'</span>':'')+esc(ev.title)+'</div>'+
@@ -199,8 +200,8 @@
     var d = S.cursor, t = todayStr(), i = dowIdx(d);
     $("period").innerHTML = md(d)+" ("+DOW[i]+")<small>"+d.slice(0,4)+"</small>";
     var vis = visible();
-    // 오늘 일정 = 이날 마감 + 이날 시작하는 기간 일정
-    var list = vis.filter(function(e){ return e.date===d || (isSpan(e) && e.start===d); });
+    // 오늘 일정 = 이날 마감 + 기간 일정 중 이날이 시작일~마감일 사이에 드는 것
+    var list = vis.filter(function(e){ return e.date===d || (isSpan(e) && e.start<=d && e.date>=d); });
     // 기간 중인 일 = 시작일~마감일 사이(시작일·마감일 당일 포함), 미완료
     var span = vis.filter(function(e){ return isSpan(e) && e.start<=d && e.date>=d && e.status!=="done"; });
     var lateList = allEvents().filter(function(e){ return isLate(e) && hit(e) && (!S.company || e.company===S.company) && (!S.year || isCommon(e.company) || isDev(e) || yearOfCompany(e.company)===S.year); }).sort(function(a,b){ return a.date<b.date?-1:1; });
