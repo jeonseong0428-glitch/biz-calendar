@@ -26,7 +26,7 @@
   var S = { view:"month", cursor: ymd(new Date()), company:"", stage:"", year:"", q:"", hideDone:false, dev:true, events:[], devEvents:[], devInfo:null, yearSet:{}, ready:false, store:null, editing:null };
   try {
     var saved = JSON.parse(localStorage.getItem("bizcal.prefs")||"null");
-    if (saved){ if (/^(month|week|day|plan)$/.test(saved.view)) S.view = saved.view; if (saved.dev===false) S.dev = false; S.company = saved.company||""; S.stage = saved.stage||""; S.year = YEAR_KEYS[saved.year] ? saved.year : ""; S.hideDone = !!saved.hideDone; }
+    if (saved){ if (/^(month|week|day|plan|span|done)$/.test(saved.view)) S.view = saved.view; if (saved.dev===false) S.dev = false; S.company = saved.company||""; S.stage = saved.stage||""; S.year = YEAR_KEYS[saved.year] ? saved.year : ""; S.hideDone = !!saved.hideDone; }
   } catch(e){}
   function savePrefs(){ try{ localStorage.setItem("bizcal.prefs", JSON.stringify({view:S.view, company:S.company, stage:S.stage, year:S.year, hideDone:S.hideDone, dev:S.dev})); }catch(e){} }
 
@@ -81,13 +81,13 @@
     var q = S.q.trim().toLowerCase(); if (!q) return true;
     return (e.company+" "+e.title+" "+(e.note||"")).toLowerCase().indexOf(q) >= 0;
   }
-  function visible(){
+  function visible(keepDone){
     return allEvents().filter(function(e){
       if (!hit(e)) return false;
       if (S.company && e.company !== S.company) return false;
       if (S.year && !isCommon(e.company) && !isDev(e) && yearOfCompany(e.company) !== S.year) return false;
       if (S.stage && stageOf(e) !== S.stage) return false;
-      if (S.hideDone && e.status === "done") return false;
+      if (S.hideDone && !keepDone && e.status === "done") return false;
       return true;
     });
   }
@@ -117,8 +117,11 @@
     var unsure = companyNames().filter(function(n){ return !isCommon(n) && yearOfCompany(n)==="확인"; }).length;
     var ub = document.querySelector('#yearSeg [data-year="확인"]'); ub.hidden = !unsure && S.year!=="확인"; ub.querySelector("span").textContent = unsure;
     $("q").value = S.q;
+    var noNav = S.view==="span" || S.view==="done";   // 기간 중인 일·완료는 오늘 기준 목록이라 이전/다음 없음
+    $("prev").style.visibility = $("next").style.visibility = noNav ? "hidden" : "";
     var dv = $("devToggle"); if (dv){ dv.checked = S.dev; dv.parentNode.hidden = !S.devEvents.length; }
-    if (S.view==="month") renderMonth(); else if (S.view==="week") renderWeek(); else if (S.view==="plan") renderPlan(); else renderDay();
+    if (S.view==="month") renderMonth(); else if (S.view==="week") renderWeek(); else if (S.view==="plan") renderPlan();
+    else if (S.view==="span") renderSpan(); else if (S.view==="done") renderDone(); else renderDay();
   }
 
   function sortMonth(a,b){ var o={doing:0,todo:1,done:2};
@@ -176,16 +179,19 @@
     $("view").innerHTML = h+'</section>';
   }
 
-  function rowHTML(ev, showDate){
+  function isSpan(e){ return !!(e.start && e.date && e.start < e.date); }
+  // day 를 주면 기간 일정에 「오늘 시작」「오늘 마감」 표시, extra 는 제목 앞 꼬리표(HTML)
+  function rowHTML(ev, showDate, day, extra){
+    var dt = (day && isSpan(ev)) ? (ev.start===day ? '<span class="tag s">'+(day===todayStr()?'오늘 ':'')+'시작</span>' : ev.date===day ? '<span class="tag e">'+(day===todayStr()?'오늘 ':'')+'마감</span>' : '') : '';
     return '<div class="row'+(ev.status==="done"?' done':'')+(isLate(ev)?' late':'')+'">'+
       '<button type="button" class="st" data-toggle="'+esc(ev.id)+'" data-s="'+ev.status+'" title="눌러서 상태 바꾸기">'+STL[ev.status]+'</button>'+
-      '<div class="rt"><div class="t">'+badge(ev)+(ev.urgent&&ev.status!=="done"?'<span class="tag u">긴급</span>':'')+(showDate?'<span class="tag p">'+md(ev.date)+'</span>':'')+esc(ev.title)+'</div>'+
+      '<div class="rt"><div class="t">'+badge(ev)+(ev.urgent&&ev.status!=="done"?'<span class="tag u">긴급</span>':'')+dt+(extra||'')+(showDate?'<span class="tag p">'+md(ev.date)+'</span>':'')+esc(ev.title)+'</div>'+
       ((ev.start||ev.note)?'<div class="m">'+(ev.start?'기간 '+md(ev.start)+' – '+md(ev.date)+(ev.note?' · ':''):'')+esc(ev.note||"")+'</div>':'')+'</div>'+
       '<button type="button" class="edit" data-id="'+esc(ev.id)+'">수정</button></div>';
   }
-  function groupsHTML(list, showDate){
-    return groupCompany(list).map(function(g){
-      return '<div class="cgroup"><div class="ch"><span class="dot" style="--h:'+hue(g.company)+'"></span>'+esc(g.company)+'</div>'+g.items.map(function(ev){ return rowHTML(ev, showDate); }).join("")+'</div>';
+  function groupsHTML(list, showDate, day, extraFn, groups){
+    return (groups || groupCompany(list)).map(function(g){
+      return '<div class="cgroup"><div class="ch"><span class="dot" style="--h:'+hue(g.company)+'"></span>'+esc(g.company)+(g.items.length>1?' <span class="cn">'+g.items.length+'</span>':'')+'</div>'+g.items.map(function(ev){ return rowHTML(ev, showDate, day, extraFn && extraFn(ev)); }).join("")+'</div>';
     }).join("");
   }
 
@@ -193,14 +199,16 @@
     var d = S.cursor, t = todayStr(), i = dowIdx(d);
     $("period").innerHTML = md(d)+" ("+DOW[i]+")<small>"+d.slice(0,4)+"</small>";
     var vis = visible();
-    var list = vis.filter(function(e){ return e.date===d; });
-    var span = vis.filter(function(e){ return e.start && e.start<=d && e.date>d && e.status!=="done"; });
+    // 오늘 일정 = 이날 마감 + 이날 시작하는 기간 일정
+    var list = vis.filter(function(e){ return e.date===d || (isSpan(e) && e.start===d); });
+    // 기간 중인 일 = 시작일~마감일 사이(시작일·마감일 당일 포함), 미완료
+    var span = vis.filter(function(e){ return isSpan(e) && e.start<=d && e.date>=d && e.status!=="done"; });
     var lateList = allEvents().filter(function(e){ return isLate(e) && hit(e) && (!S.company || e.company===S.company) && (!S.year || isCommon(e.company) || isDev(e) || yearOfCompany(e.company)===S.year); }).sort(function(a,b){ return a.date<b.date?-1:1; });
     var undated = vis.filter(function(e){ return !e.date; });
     var h = '<section class="dayview"><div>'+
       '<div class="panel"><h2>'+(d===t?'오늘':md(d))+' 일정 <span class="n">'+list.length+'</span><span class="hint">상태 버튼을 누르면 예정 → 진행 중 → 완료</span></h2>'+
-      (list.length? groupsHTML(list,false) : '<p class="none">이 날짜에 잡힌 일정이 없습니다. 오른쪽 위 「+ 일정」으로 추가하세요.</p>')+'</div>'+
-      (span.length?'<div class="panel" style="margin-top:12px"><h2>기간 중인 일 <span class="n">'+span.length+'</span></h2>'+groupsHTML(span,true)+'</div>':'')+
+      (list.length? groupsHTML(list,false,d) : '<p class="none">이 날짜에 잡힌 일정이 없습니다. 오른쪽 위 「+ 일정」으로 추가하세요.</p>')+'</div>'+
+      (span.length?'<div class="panel" style="margin-top:12px"><h2>기간 중인 일 <span class="n">'+span.length+'</span></h2>'+groupsHTML(span,true,d)+'</div>':'')+
       '</div><aside class="side">'+
       '<div class="panel"><h2>밀린 일 <span class="n">'+lateList.length+'</span></h2>'+(lateList.length?'<div class="minilist">'+lateList.slice(0,40).map(function(e){
         return '<button type="button" data-id="'+esc(e.id)+'"><span class="dot" style="--h:'+hue(e.company)+'"></span><span class="nm">'+esc(e.company)+' · '+esc(e.title)+'</span><span class="dd">'+md(e.date)+'</span></button>';
@@ -260,6 +268,51 @@
       (groups.length ? groups.map(planCard).join("") : '<p class="none">조건에 맞는 일정이 없습니다.</p>')+'</section>';
   }
 
+  // =====================================================================
+  //  기간 중인 일 — 시작일·마감일이 있는 일정만. 오늘 기준
+  // =====================================================================
+  function ddTag(e){ var x = dday(e); return x ? '<span class="tag'+(/밀림/.test(x)?' u':(x==="오늘"||/^D-[0-3]$/.test(x))?' e':' p')+'">'+x+'</span>' : ''; }
+  function groupsByDate(list, key, desc){
+    var m = {}, order = [];
+    list.forEach(function(e){ if (!m[e.company]){ m[e.company] = []; order.push(e.company); } m[e.company].push(e); });
+    var cmp = function(a,b){ var x=(a[key]||""), y=(b[key]||""); return desc ? y.localeCompare(x) : x.localeCompare(y); };
+    var gs = order.map(function(c){ return {company:c, items:m[c].slice().sort(function(a,b){ return cmp(a,b) || a.title.localeCompare(b.title,"ko"); })}; });
+    gs.sort(function(a,b){ return cmp(a.items[0], b.items[0]) || a.company.localeCompare(b.company,"ko"); });
+    return gs;
+  }
+  function renderSpan(){
+    var t = todayStr();
+    var all = visible().filter(function(e){ return isSpan(e) && e.status!=="done"; });
+    var now  = all.filter(function(e){ return e.start<=t && e.date>=t; });
+    var soon = all.filter(function(e){ return e.start>t; });
+    var over = all.filter(function(e){ return e.date<t; });
+    $("period").innerHTML = "기간 중인 일<small>"+md(t)+" 기준 "+now.length+"건</small>";
+    var tagNow = function(e){ if (e.date===t) return ''; var x = dday(e); return /밀림/.test(x) ? ddTag(e) : '<span class="tag'+(/^D-[0-3]$/.test(x)?' e':' p')+'">마감 '+x+'</span>'; };
+    var tagSoon = function(e){ return '<span class="tag p">D-'+Math.round((parse(e.start)-parse(t))/864e5)+' 시작</span>'; };
+    var sec = function(title, hint, list, groups, fn){
+      return '<div class="panel spanp"><h2>'+title+' <span class="n">'+list.length+'</span><span class="hint">'+hint+'</span></h2>'+
+        (list.length ? groupsHTML(list, false, t, fn, groups) : '<p class="none">해당 일정이 없습니다.</p>')+'</div>';
+    };
+    $("view").innerHTML = legendHTML()+'<section class="listview">'+
+      sec("지금 기간 중", "오늘이 시작일~마감일 사이 · 마감 가까운 순", now, groupsByDate(now,"date"), tagNow)+
+      sec("시작 전", "시작일 가까운 순", soon, groupsByDate(soon,"start"), tagSoon)+
+      (over.length ? sec("기간 지남 · 미완료", "마감일이 지났는데 완료 안 됨", over, groupsByDate(over,"date"), tagNow) : '')+
+      '</section>';
+  }
+
+  // =====================================================================
+  //  완료 — 완료된 일정만, 업체별 (최근 마감일 순). 「완료 숨기기」와 상관없이 보임
+  // =====================================================================
+  function renderDone(){
+    var list = visible(true).filter(function(e){ return e.status==="done"; });
+    var groups = groupsByDate(list, "date", true);
+    $("period").innerHTML = "완료<small>"+list.length+"건</small>";
+    $("view").innerHTML = legendHTML()+'<section class="listview">'+
+      '<div class="panel"><h2>완료된 일정 <span class="n">'+list.length+'</span><span class="hint">업체별 · 최근 마감일 순 · 「완료」를 누르면 예정으로 되돌림</span></h2>'+
+      (list.length ? groupsHTML(list, true, null, null, groups) : '<p class="none">완료된 일정이 없습니다. 일정의 상태 버튼을 눌러 「완료」로 바꾸면 여기에 모입니다.</p>')+
+      '</div></section>';
+  }
+
   function companyNames(){
     var set = {}; allEvents().forEach(function(e){ if(e.company) set[e.company]=1; });
     return Object.keys(set).sort(function(a,b){ return a.localeCompare(b,"ko"); });
@@ -280,7 +333,7 @@
 
   // ---- 이동
   function move(dir){
-    if (S.view==="plan") return;
+    if (S.view==="plan" || S.view==="span" || S.view==="done") return;
     if (S.view==="month"){ var c=parse(S.cursor); S.cursor = ymd(new Date(c.getFullYear(), c.getMonth()+dir, 1)); }
     else S.cursor = addDays(S.cursor, S.view==="week"?7*dir:dir);
     render();
