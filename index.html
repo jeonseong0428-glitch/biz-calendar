@@ -276,6 +276,27 @@ dialog::backdrop{background:rgba(15,20,18,.38)}
 .ev.begin{background:transparent;box-shadow:inset 0 0 0 1px var(--line2)}
 .ev.begin .ti{color:var(--muted)}
 .ev .mk{font-size:10px;font-weight:700;color:var(--accent)}
+.it .mk{font-size:10.5px;font-weight:700;color:var(--accent)}
+.it .mk.e{color:var(--crit)}
+.it.mid{color:var(--muted)}
+/* 스케줄 리스트 */
+.checklist .lh{font-size:15px}
+.checklist .lh.today{color:var(--accent)}
+.checklist .lh.late{color:var(--crit)}
+.cklist{list-style:none;margin:0;padding:4px 0}
+.ck{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:start;padding:10px 16px;border-top:1px solid var(--line)}
+.ck:first-child{border-top:0}
+.ck .cb{display:flex;align-items:center;justify-content:center;width:28px;height:28px;margin-top:-2px;cursor:pointer}
+.ck .cb input{width:20px;height:20px;margin:0;accent-color:var(--accent);cursor:pointer}
+.ck .cb input:disabled{cursor:not-allowed;opacity:.5}
+.ckb{min-width:0;cursor:pointer}
+.ckt{font-size:14.5px;font-weight:500;line-height:1.45;overflow-wrap:anywhere}
+.ckt .sb{margin-right:6px}
+.ckm{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;margin-top:3px;font-size:12.5px;color:var(--muted)}
+.ckm .tag{margin-right:0}
+.ckm .nt{flex-basis:100%;color:var(--muted)}
+.ck.done .ckt{color:var(--done);text-decoration:line-through}
+.ck.late .ckt{color:var(--crit)}
 .ev.dev .co{color:var(--ink2)}
 .ev.dev::after{content:"";}
 
@@ -339,6 +360,7 @@ dialog::backdrop{background:rgba(15,20,18,.38)}
       <button type="button" data-view="month">월간</button>
       <button type="button" data-view="plan">일정설계</button>
       <button type="button" data-view="span">기간 중인 일</button>
+      <button type="button" data-view="list">스케줄 리스트</button>
       <button type="button" data-view="done">완료</button>
     </div>
     <div class="sp"></div>
@@ -423,6 +445,6 @@ dialog::backdrop{background:rgba(15,20,18,.38)}
 </dialog>
 
 <script src="config.js?v=12"></script>
-<script src="app.js?v=14"></script>
+<script src="app.js?v=15"></script>
 </body>
 </html>

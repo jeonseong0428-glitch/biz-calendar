@@ -26,7 +26,7 @@
   var S = { view:"month", cursor: ymd(new Date()), company:"", stage:"", year:"", q:"", hideDone:false, dev:true, events:[], devEvents:[], devInfo:null, yearSet:{}, ready:false, store:null, editing:null };
   try {
     var saved = JSON.parse(localStorage.getItem("bizcal.prefs")||"null");
-    if (saved){ if (/^(month|week|day|plan|span|done)$/.test(saved.view)) S.view = saved.view; if (saved.dev===false) S.dev = false; S.company = saved.company||""; S.stage = saved.stage||""; S.year = YEAR_KEYS[saved.year] ? saved.year : ""; S.hideDone = !!saved.hideDone; }
+    if (saved){ if (/^(month|week|day|plan|span|done|list)$/.test(saved.view)) S.view = saved.view; if (saved.dev===false) S.dev = false; S.company = saved.company||""; S.stage = saved.stage||""; S.year = YEAR_KEYS[saved.year] ? saved.year : ""; S.hideDone = !!saved.hideDone; }
   } catch(e){}
   function savePrefs(){ try{ localStorage.setItem("bizcal.prefs", JSON.stringify({view:S.view, company:S.company, stage:S.stage, year:S.year, hideDone:S.hideDone, dev:S.dev})); }catch(e){} }
 
@@ -117,16 +117,16 @@
     var unsure = companyNames().filter(function(n){ return !isCommon(n) && yearOfCompany(n)==="확인"; }).length;
     var ub = document.querySelector('#yearSeg [data-year="확인"]'); ub.hidden = !unsure && S.year!=="확인"; ub.querySelector("span").textContent = unsure;
     $("q").value = S.q;
-    var noNav = S.view==="span" || S.view==="done";   // 기간 중인 일·완료는 오늘 기준 목록이라 이전/다음 없음
+    var noNav = S.view==="span" || S.view==="done" || S.view==="list";   // 기간 중인 일·완료는 오늘 기준 목록이라 이전/다음 없음
     $("prev").style.visibility = $("next").style.visibility = noNav ? "hidden" : "";
     var dv = $("devToggle"); if (dv){ dv.checked = S.dev; dv.parentNode.hidden = !S.devEvents.length; }
     if (S.view==="month") renderMonth(); else if (S.view==="week") renderWeek(); else if (S.view==="plan") renderPlan();
-    else if (S.view==="span") renderSpan(); else if (S.view==="done") renderDone(); else renderDay();
+    else if (S.view==="span") renderSpan(); else if (S.view==="done") renderDone(); else if (S.view==="list") renderList(); else renderDay();
   }
 
-  function sortMonth(a,b){ var o={doing:0,todo:1,done:2};
+  function sortMonth(a,b){ var o={doing:0,todo:1,done:2}, mk={start:1, mid:2};
     // 방금 넣은 일정 → 우리 팀 일정 → 개발팀 일정 순서로 (칸이 넘쳐도 우리 것이 먼저 보이게)
-    return (b.id===S.flash?1:0)-(a.id===S.flash?1:0) || (isDev(a)?1:0)-(isDev(b)?1:0) || o[a.status]-o[b.status] || (b.urgent?1:0)-(a.urgent?1:0) || stageOf(a).localeCompare(stageOf(b)) || a.company.localeCompare(b.company,"ko"); }
+    return (b.id===S.flash?1:0)-(a.id===S.flash?1:0) || (mk[a._mark]||0)-(mk[b._mark]||0) || (isDev(a)?1:0)-(isDev(b)?1:0) || o[a.status]-o[b.status] || (b.urgent?1:0)-(a.urgent?1:0) || stageOf(a).localeCompare(stageOf(b)) || a.company.localeCompare(b.company,"ko"); }
   function legendHTML(){
     return '<div class="legend" role="group" aria-label="사업 단계로 거르기">'+STAGES.map(function(x){
       return '<button type="button" class="lg'+(S.stage===x.k?' on':'')+'" data-stage="'+x.k+'" aria-pressed="'+(S.stage===x.k)+'"><b class="sb"'+stageStyle(x.k)+'>'+(x.k==="0"?"·":x.k)+'</b>'+x.n+'</button>';
@@ -138,9 +138,12 @@
     var first = ymd(new Date(y,m,1)), start = weekStartOf(first);
     var last = new Date(y,m+1,0), end = addDays(weekStartOf(ymd(last)),6);
     var vis = visible(), map = byDate(vis), t = todayStr();
-    vis.forEach(function(e){   // 기간 일정은 시작일 칸에도 한 번 더 보여 준다
-      if (!e.start || !e.date || e.start >= e.date) return;
-      (map[e.start] = map[e.start] || []).push(Object.assign({}, e, {_mark:"start"}));
+    vis.forEach(function(e){   // 기간 일정은 시작일부터 마감 전날까지 매일 칸에도 보여 준다
+      if (!isSpan(e)) return;
+      var from = e.start > start ? e.start : start;
+      for (var x = from; x < e.date && x <= end; x = addDays(x,1)){
+        (map[x] = map[x] || []).push(Object.assign({}, e, {_mark: x===e.start ? "start" : "mid"}));
+      }
     });
     var h = legendHTML()+'<section class="month" aria-label="월간 달력"><div class="dow">'+DOW.map(function(d){return "<div>"+d+"</div>";}).join("")+'</div><div class="grid">';
     for (var d=start; d<=end; d=addDays(d,1)){
@@ -153,8 +156,8 @@
           var k = stageOf(e);
           var span = e.start && e.date && e.start < e.date;
           var rg = span ? '<span class="rg">'+md(e.start)+' → '+md(e.date)+'</span>' : '';
-          return '<span class="ev'+(e.status==="done"?' done':'')+(isLate(e)&&e._mark!=="start"?' late':'')+(e.urgent&&e.status!=="done"?' urgent':'')+(e._mark==="start"?' begin':'')+(isDev(e)?' dev':'')+(e.id===S.flash?' flash':'')+'"'+stageStyle(k)+' title="'+esc(STAGE[k].n+" · "+e.company+" · "+e.title+(span?" ("+md(e.start)+"~"+md(e.date)+")":""))+'">'+
-            '<span class="eh"><b class="sb">'+(e._mark==="start"?"▶":(k==="0"?"·":k))+'</b><span class="co">'+esc(e.company)+'</span></span><span class="ti">'+(e._mark==="start"?'<b class="mk">시작</b> ':'')+esc(e.title)+'</span>'+rg+'</span>';
+          return '<span class="ev'+(e.status==="done"?' done':'')+(isLate(e)&&!e._mark?' late':'')+(e.urgent&&e.status!=="done"?' urgent':'')+(e._mark?' begin':'')+(isDev(e)?' dev':'')+(e.id===S.flash?' flash':'')+'"'+stageStyle(k)+' title="'+esc(STAGE[k].n+" · "+e.company+" · "+e.title+(span?" ("+md(e.start)+"~"+md(e.date)+")":""))+'">'+
+            '<span class="eh"><b class="sb">'+(e._mark==="start"?"▶":e._mark==="mid"?"…":(k==="0"?"·":k))+'</b><span class="co">'+esc(e.company)+'</span></span><span class="ti">'+(e._mark==="start"?'<b class="mk">시작</b> ':e._mark==="mid"?'<b class="mk">기간 중</b> ':'')+esc(e.title)+'</span>'+rg+'</span>';
         }).join("")+
         (list.length>max?'<span class="more">+'+(list.length-max)+'건</span>':'')+'</div>';
     }
@@ -165,14 +168,17 @@
     var s = weekStartOf(S.cursor), e = addDays(s,6), t = todayStr();
     var sy = s.slice(0,4);
     $("period").innerHTML = md(s)+" – "+md(e)+"<small>"+sy+"</small>";
-    var map = byDate(visible()), h = '<section class="week" aria-label="주간 달력">';
+    var vis = visible(), h = '<section class="week" aria-label="주간 달력">';
     for (var i=0;i<7;i++){
-      var d = addDays(s,i), list = map[d]||[], groups = groupCompany(list);
+      var d = addDays(s,i);
+      var list = vis.filter(function(x){ return x.date===d || (isSpan(x) && x.start<=d && x.date>d); });
+      var groups = groupCompany(list);
       h += '<div class="day'+((i===0||i===6)?' weekend':'')+(d===t?' today':'')+'">'+
         '<button type="button" class="dayh" data-day="'+d+'"><span class="d">'+(+d.slice(8))+'</span><span class="w">'+DOW[i]+'</span><span class="n">'+(list.length?list.length+'건':'')+'</span></button>'+
         '<div class="daybody">'+(groups.length? groups.map(function(g){
           return '<div class="grp">'+chipHTML(g,'data-day="'+d+'"')+g.items.map(function(ev){
-            return '<button type="button" class="it'+(ev.status==="done"?' done':'')+(isLate(ev)?' late':'')+(ev.urgent?' urgent':'')+'" data-id="'+esc(ev.id)+'">'+badge(ev)+esc(ev.title)+'</button>';
+            var sp = isSpan(ev) && ev.date!==d ? (ev.start===d ? '<b class="mk">시작</b> ' : '<b class="mk">기간 중</b> ') : (isSpan(ev) ? '<b class="mk e">마감</b> ' : '');
+            return '<button type="button" class="it'+(ev.status==="done"?' done':'')+(isLate(ev)&&ev.date===d?' late':'')+(ev.urgent?' urgent':'')+(isSpan(ev)&&ev.date!==d?' mid':'')+'" data-id="'+esc(ev.id)+'" title="'+esc(ev.company+" · "+ev.title+(isSpan(ev)?" ("+md(ev.start)+"~"+md(ev.date)+")":""))+'">'+badge(ev)+sp+esc(ev.title)+'</button>';
           }).join("")+'</div>';
         }).join("") : '<span class="empty">일정 없음</span>')+'</div></div>';
     }
@@ -314,6 +320,68 @@
       '</div></section>';
   }
 
+  // =====================================================================
+  //  스케줄 리스트 — 날짜별 할 일 목록, 체크하면 완료
+  //  기간 일정은 오늘이 기간 안이면 「오늘」에, 아니면 마감일에 한 번만 보인다
+  // =====================================================================
+  var KDOW = DOW;
+  function listKey(e, t){
+    if (!e.date) return "none";
+    if (e.status!=="done" && e.date < t) return "late";
+    if (isSpan(e) && e.start<=t && e.date>=t) return t;
+    return e.date;
+  }
+  function checkRow(e, t){
+    var dev = isDev(e), done = e.status==="done", span = isSpan(e);
+    var tags = (e.urgent&&!done?'<span class="tag u">긴급</span>':'')+
+      (span ? '<span class="tag s">기간 '+md(e.start)+'–'+md(e.date)+'</span>' : '')+
+      (!done && e.date ? ddTag(e) : '');
+    return '<li class="ck'+(done?' done':'')+(isLate(e)?' late':'')+'">'+
+      '<label class="cb"><input type="checkbox" data-check="'+esc(e.id)+'"'+(done?' checked':'')+(dev?' disabled title="개발팀 일정은 읽기 전용"':'')+' aria-label="'+esc(e.company+" "+e.title)+' 완료"></label>'+
+      '<div class="ckb" data-id="'+esc(e.id)+'" role="button" tabindex="0">'+
+        '<div class="ckt">'+badge(e)+esc(e.title)+'</div>'+
+        '<div class="ckm"><span class="dot" style="--h:'+hue(e.company)+'"></span>'+esc(e.company)+tags+(e.note?'<span class="nt">'+esc(e.note)+'</span>':'')+'</div>'+
+      '</div></li>';
+  }
+  function renderList(){
+    var t = todayStr(), tm = addDays(t,1);
+    var vis = visible().filter(function(e){ return !(e.status==="done" && e.date && e.date < t); });   // 지난 완료 일은 「완료」 탭에서
+    var m = {};
+    vis.forEach(function(e){ var k = listKey(e, t); (m[k] = m[k] || []).push(e); });
+    var keys = Object.keys(m).filter(function(k){ return k!=="late" && k!=="none"; }).sort();
+    var order = (m.late?["late"]:[]).concat(keys).concat(m.none?["none"]:[]);
+    var openN = vis.filter(function(e){ return e.status!=="done"; }).length;
+    $("period").innerHTML = "스케줄 리스트<small>남은 일 "+openN+"건</small>";
+    var sortL = function(a,b){ var o={doing:0,todo:1,done:2}; return o[a.status]-o[b.status] || (b.urgent?1:0)-(a.urgent?1:0) || a.company.localeCompare(b.company,"ko") || a.title.localeCompare(b.title,"ko"); };
+    var head = function(k){
+      if (k==="late") return '<span class="lh late">밀린 일</span>';
+      if (k==="none") return '<span class="lh">날짜 미정</span>';
+      var lbl = k===t ? '오늘' : k===tm ? '내일' : '';
+      return '<span class="lh'+(k===t?' today':'')+'">'+(lbl?lbl+' · ':'')+md(k)+' ('+KDOW[dowIdx(k)]+')</span>';
+    };
+    var h = '<section class="listview checklist">';
+    if (!order.length) h += '<div class="panel"><p class="none">조건에 맞는 일정이 없습니다.</p></div>';
+    order.forEach(function(k){
+      var items = m[k].slice().sort(sortL);
+      var left = items.filter(function(e){ return e.status!=="done"; }).length;
+      h += '<div class="panel"><h2>'+head(k)+' <span class="n">'+left+(left!==items.length?' / '+items.length:'')+'</span>'+(k===t?'<span class="hint">기간 중인 일도 포함 · 체크하면 완료</span>':'')+'</h2>'+
+        '<ul class="cklist">'+items.map(function(e){ return checkRow(e, t); }).join("")+'</ul></div>';
+    });
+    $("view").innerHTML = h+'</section>';
+  }
+  function setStatus(id, s){
+    var e = find(id); if (!e || !S.store || isDev(e)) return;
+    e.status = s; render();
+    write(id, function(){ return S.store.patch(id, {status:s, updatedAt:new Date().toISOString()}); }).catch(writeError);
+  }
+  $("view").addEventListener("change", function(ev){
+    var c = ev.target.closest && ev.target.closest("[data-check]"); if (!c) return;
+    var e = find(c.getAttribute("data-check"));
+    if (!S.store){ c.checked = !c.checked; showBanner("저장소에 연결되지 않아 지금은 바꿀 수 없습니다. 새로고침해 보세요."); return; }
+    setStatus(c.getAttribute("data-check"), c.checked ? "done" : "todo");
+    if (e) showBanner(c.checked ? "「"+e.title+"」 완료로 바꿨습니다." : "「"+e.title+"」 다시 예정으로 돌렸습니다.", true);
+  });
+
   function companyNames(){
     var set = {}; allEvents().forEach(function(e){ if(e.company) set[e.company]=1; });
     return Object.keys(set).sort(function(a,b){ return a.localeCompare(b,"ko"); });
@@ -334,7 +402,7 @@
 
   // ---- 이동
   function move(dir){
-    if (S.view==="plan" || S.view==="span" || S.view==="done") return;
+    if (S.view==="plan" || S.view==="span" || S.view==="done" || S.view==="list") return;
     if (S.view==="month"){ var c=parse(S.cursor); S.cursor = ymd(new Date(c.getFullYear(), c.getMonth()+dir, 1)); }
     else S.cursor = addDays(S.cursor, S.view==="week"?7*dir:dir);
     render();
